@@ -4,7 +4,7 @@ const router = express.Router();
 const Payment = require("../models/Payment");
 const User = require("../models/User");
 const Booking = require("../models/Booking");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 // =========================
 // GET ALL PAYMENTS

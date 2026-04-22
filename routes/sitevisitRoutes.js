@@ -3,7 +3,7 @@ const router = express.Router();
 
 const SiteVisit = require("../models/SiteVisit");
 const User = require("../models/User");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 router.get("/", fetchuser, async (req, res) => {
   try {

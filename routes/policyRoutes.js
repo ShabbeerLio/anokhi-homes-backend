@@ -4,7 +4,7 @@ const express = require("express");
 const router = express.Router();
 
 const Policy = require("../models/Policy");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 /* =========================
    GET ALL POLICIES

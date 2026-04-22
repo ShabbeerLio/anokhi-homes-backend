@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 
 const { login, register } = require("../controllers/authController");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 const User = require("../models/User");
 const StaffRole = require("../models/StaffRole");
 

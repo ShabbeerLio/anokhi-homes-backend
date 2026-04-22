@@ -3,7 +3,7 @@ const router = express.Router();
 
 const Lead = require("../models/Lead");
 const User = require("../models/User");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 /* =========================
    GET ALL LEADS

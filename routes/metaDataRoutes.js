@@ -4,7 +4,7 @@ const express = require("express");
 const router = express.Router();
 
 const MetaData = require("../models/MetaData");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 /* GET */
 router.get("/", async (req, res) => {

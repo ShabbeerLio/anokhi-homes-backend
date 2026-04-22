@@ -4,7 +4,7 @@ const router = express.Router();
 const Booking = require("../models/Booking");
 const Colony = require("../models/Colony");
 const User = require("../models/User");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
