@@ -1,0 +1,95 @@
+// models/Booking.js
+
+const mongoose = require("mongoose");
+
+const bookingSchema = new mongoose.Schema(
+  {
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    agent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    location: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+    },
+
+    colony: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Colony",
+      required: true,
+    },
+
+    plotId: String, // 🔥 P-1, A-12 etc
+    pricePerSqft: Number,
+    plotArea: Number,
+
+    totalAmount: Number, // auto from plot
+
+    requestAmount: Number, // 🔥 NEW (agent request)
+
+    amountPaid: {
+      type: Number,
+      default: 0,
+    },
+
+    status: {
+      type: String,
+      enum: ["approval", "pending", "confirmed", "rejected"],
+      default: "approval",
+    },
+
+    paymentSchedule: {
+      booking: {
+        percent: Number,
+        amount: Number,
+        paid: Boolean,
+        date: Date,
+      },
+
+      agreement: {
+        percent: Number,
+        amount: Number,
+        dueDays: Number,
+        paid: Boolean,
+        date: Date,
+      },
+
+      full: {
+        percent: Number,
+        amount: Number,
+        dueDays: Number,
+        paid: Boolean,
+        date: Date,
+      },
+    },
+
+    notes: [
+      {
+        text: String,
+        by: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  },
+  { timestamps: true },
+);
+
+module.exports = mongoose.model("Booking", bookingSchema);

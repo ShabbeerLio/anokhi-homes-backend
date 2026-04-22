@@ -1,0 +1,280 @@
+const express = require("express");
+const router = express.Router();
+
+const Lead = require("../models/Lead");
+const User = require("../models/User");
+const fetchuser = require("../middleware/fetchuser");
+
+/* =========================
+   GET ALL LEADS
+========================= */
+
+router.get("/", fetchuser, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    let leads = [];
+
+    // ✅ ADMIN / STAFF
+    if (user.role === "admin" || user.role === "staff") {
+      leads = await Lead.find().populate("agent", "name");
+    }
+
+    // ✅ AGENT VIEW
+    else if (user.role === "agent") {
+      const all = await Lead.find({
+        $or: [{ agent: user._id }, { rejectedBy: user._id }],
+      }).populate("agent", "name");
+
+      leads = all.map((lead) => {
+        let obj = lead.toObject();
+
+        // 🔥 NEW (just assigned, not accepted yet)
+        // 🔥 ONLY admin-assigned leads should be "new"
+        if (
+          lead.agent &&
+          !lead.isAccepted &&
+          lead.assignedBy // 👈 important condition
+        ) {
+          obj.status = "new";
+        }
+
+        // 🔥 ACCEPTED
+        else if (lead.agent && lead.isAccepted) {
+          obj.status = "assigned";
+        }
+
+        // 🔥 REJECTED
+        else if (lead.rejectedBy?.toString() === user._id.toString()) {
+          obj.status = "rejected";
+        }
+
+        // 🔥 MISSED
+        else if (!lead.agent && lead.status === "unassigned") {
+          obj.status = "missed";
+        }
+
+        return obj;
+      });
+    }
+
+    res.json(leads);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+/* =========================
+   ADD LEAD
+========================= */
+
+router.post("/add", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+
+    let leadData = {
+      name: req.body.name,
+      phone: req.body.phone,
+      email: req.body.email,
+      source: req.body.source,
+      notes: req.body.notes || [],
+    };
+
+    // If agent creates lead
+    if (loggedUser.role === "agent") {
+      leadData.agent = loggedUser._id;
+      leadData.status = "assigned";
+      leadData.isAccepted = true; // ✅ FIX
+    } else {
+      // Admin / staff
+      leadData.status = "new";
+    }
+
+    const lead = await Lead.create(leadData);
+
+    res.json(lead);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Server Error");
+  }
+});
+
+/* =========================
+   ADD NOTE TO LEAD
+========================= */
+
+router.post("/add-note/:id", fetchuser, async (req, res) => {
+  try {
+    const { note } = req.body;
+
+    if (!note) {
+      return res.status(400).json({
+        message: "Note is required",
+      });
+    }
+
+    const lead = await Lead.findById(req.params.id);
+
+    if (!lead) {
+      return res.status(404).json({
+        message: "Lead not found",
+      });
+    }
+
+    // 🔥 ROLE CHECK (optional but recommended)
+    const loggedUser = await User.findById(req.user.id);
+
+    // Agent can only add note to their own lead
+    if (
+      loggedUser.role === "agent" &&
+      lead.agent?.toString() !== loggedUser._id.toString()
+    ) {
+      return res.status(403).json({
+        message: "Not allowed to add note to this lead",
+      });
+    }
+
+    // 🔥 ADD NOTE
+    lead.notes.push({
+      text: note,
+      by: loggedUser._id,
+    });
+
+    await lead.save();
+
+    res.json({
+      message: "Note added successfully",
+      lead,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Server Error");
+  }
+});
+
+/* =========================
+   EDIT LEAD
+========================= */
+
+router.put("/edit/:id", fetchuser, async (req, res) => {
+  try {
+    const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+
+    res.json(lead);
+  } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
+/* =========================
+   DELETE LEAD
+========================= */
+
+router.delete("/delete/:id", fetchuser, async (req, res) => {
+  try {
+    await Lead.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "Lead deleted" });
+  } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
+/* =========================
+   ASSIGN AGENT
+========================= */
+
+router.put("/assign/:id", fetchuser, async (req, res) => {
+  try {
+    const admin = await User.findById(req.user.id);
+
+    if (admin.role !== "admin" && admin.role !== "staff") {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    const { agentId } = req.body;
+
+    const lead = await Lead.findByIdAndUpdate(
+      req.params.id,
+      {
+        agent: agentId,
+        status: "assigned",
+        assignedAt: new Date(),
+        assignedBy: admin._id,
+        isAccepted: false, // 🔥 important
+      },
+      { new: true },
+    );
+
+    res.json(lead);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/agent-action/:id", fetchuser, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (user.role !== "agent") {
+      return res.status(403).json({ message: "Only agent allowed" });
+    }
+
+    const { action, note } = req.body;
+
+    const lead = await Lead.findById(req.params.id);
+
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    if (lead.agent.toString() !== user._id.toString()) {
+      return res.status(403).json({ message: "Not your lead" });
+    }
+
+    let update = {};
+
+    // ✅ ACCEPT
+    if (action === "accept") {
+      update.isAccepted = true;
+
+      update.$push = {
+        notes: {
+          text: note || "Accepted by agent",
+          by: user._id,
+        },
+      };
+    }
+
+    // ❌ REJECT
+    else if (action === "reject") {
+      if (!note) {
+        return res.status(400).json({ message: "Note required" });
+      }
+
+      update.status = "unassigned"; // 🔥 back to admin
+      update.rejectedBy = user._id;
+      update.agent = null;
+      update.isAccepted = false;
+
+      update.$push = {
+        notes: {
+          text: note,
+          by: user._id,
+        },
+      };
+    } else {
+      return res.status(400).json({ message: "Invalid action" });
+    }
+
+    const updated = await Lead.findByIdAndUpdate(req.params.id, update, {
+      new: true,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
+module.exports = router;
