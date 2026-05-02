@@ -17,14 +17,16 @@ router.get("/", fetchuser, async (req, res) => {
 
     // ✅ ADMIN / STAFF
     if (user.role === "admin" || user.role === "staff") {
-      leads = await Lead.find().populate("agent", "name");
+      leads = await Lead.find()
+        .populate("agent", "name")
+        .populate("notes.by", "name");
     }
 
     // ✅ AGENT VIEW
     else if (user.role === "agent") {
       const all = await Lead.find({
         $or: [{ agent: user._id }, { rejectedBy: user._id }],
-      }).populate("agent", "name");
+      }).populate("agent", "name").populate("notes.by", "name");;
 
       leads = all.map((lead) => {
         let obj = lead.toObject();
@@ -71,7 +73,7 @@ router.get("/", fetchuser, async (req, res) => {
 router.post("/add", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
-     const { customerId } = req.body;
+    const { customerId } = req.body;
 
     let leadData = {
       customer: customerId,
