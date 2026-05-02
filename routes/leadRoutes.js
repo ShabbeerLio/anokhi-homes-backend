@@ -71,11 +71,10 @@ router.get("/", fetchuser, async (req, res) => {
 router.post("/add", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
+    const { customerId } = req.body;
 
     let leadData = {
-      name: req.body.name,
-      phone: req.body.phone,
-      email: req.body.email,
+      customer: customerId,
       source: req.body.source,
       notes: req.body.notes || [],
     };
