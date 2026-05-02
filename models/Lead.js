@@ -8,6 +8,9 @@ const leadSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    name: String,
+    phone: String,
+    email: String,
 
     source: String,
 
