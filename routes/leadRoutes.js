@@ -33,13 +33,15 @@ router.get("/", fetchuser, async (req, res) => {
       leads = all.map((lead) => {
         let obj = lead.toObject();
 
-        // 🔥 NEW (just assigned, not accepted yet)
-        // 🔥 ONLY admin-assigned leads should be "new"
-        if (
-          lead.agent &&
-          !lead.isAccepted &&
-          lead.assignedBy // 👈 important condition
-        ) {
+        // ✅ 🔥 FINAL STATES FIRST (DO NOT OVERRIDE)
+        if (lead.status === "lost") {
+          obj.status = "lost";
+        } else if (lead.status === "converted") {
+          obj.status = "converted";
+        }
+
+        // 🔥 NEW (assigned but not accepted)
+        else if (lead.agent && !lead.isAccepted && lead.assignedBy) {
           obj.status = "new";
         }
 
