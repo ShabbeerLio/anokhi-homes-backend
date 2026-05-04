@@ -316,7 +316,7 @@ router.put("/agent-action/:id", fetchuser, async (req, res) => {
 
       update.$push = {
         notes: {
-          text: note || "Accepted by agent",
+          text: note || `Accepted by ${user.name}`,
           by: user._id,
         },
       };
