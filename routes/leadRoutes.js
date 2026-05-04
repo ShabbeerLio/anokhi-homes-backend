@@ -383,10 +383,6 @@ router.put("/mark-lost/:id", fetchuser, async (req, res) => {
     lead.lostReason = reason;
     lead.lostAt = new Date();
 
-    // also unassign agent (optional business logic)
-    lead.agent = null;
-    lead.isAccepted = false;
-
     // ✅ Add note automatically
     lead.notes.push({
       text: `Marked as lost: ${reason}`,
