@@ -26,7 +26,9 @@ router.get("/", fetchuser, async (req, res) => {
     else if (user.role === "agent") {
       const all = await Lead.find({
         $or: [{ agent: user._id }, { rejectedBy: user._id }],
-      }).populate("agent", "name").populate("notes.by", "name");;
+      })
+        .populate("agent", "name")
+        .populate("notes.by", "name");
 
       leads = all.map((lead) => {
         let obj = lead.toObject();
@@ -155,6 +157,74 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+router.put("/edit-note/:leadId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const { note } = req.body;
+
+    if (!note) {
+      return res.status(400).json({ message: "Note is required" });
+    }
+
+    const lead = await Lead.findById(req.params.leadId);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = lead.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can edit
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.text = note;
+    noteItem.editedAt = new Date();
+
+    await lead.save();
+
+    res.json({ message: "Note updated", lead });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.delete("/delete-note/:leadId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.leadId);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = lead.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can delete
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.deleteOne();
+
+    await lead.save();
+
+    res.json({ message: "Note deleted", lead });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
 
 /* =========================
    EDIT LEAD
@@ -277,6 +347,60 @@ router.put("/agent-action/:id", fetchuser, async (req, res) => {
 
     res.json(updated);
   } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/mark-lost/:id", fetchuser, async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({
+        message: "Lost reason is required",
+      });
+    }
+
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    // ✅ Agent can only mark their own lead
+    if (
+      user.role === "agent" &&
+      lead.agent?.toString() !== user._id.toString()
+    ) {
+      return res.status(403).json({
+        message: "Not allowed to update this lead",
+      });
+    }
+
+    // 🔥 Update lead
+    lead.status = "lost";
+    lead.lostReason = reason;
+    lead.lostAt = new Date();
+
+    // also unassign agent (optional business logic)
+    lead.agent = null;
+    lead.isAccepted = false;
+
+    // ✅ Add note automatically
+    lead.notes.push({
+      text: `Marked as lost: ${reason}`,
+      by: user._id,
+    });
+
+    await lead.save();
+
+    res.json({
+      message: "Lead marked as lost",
+      lead,
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).send("Server Error");
   }
 });

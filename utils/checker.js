@@ -9,12 +9,14 @@ cron.schedule("0 * * * *", async () => {
 
   const leads = await Lead.find({
     status: "assigned",
+    isAccepted: false,
     assignedAt: { $lte: past24h },
   });
 
   for (let lead of leads) {
     lead.status = "unassigned";
     lead.agent = null;
+    lead.isAccepted = false;
 
     lead.notes.push({
       text: "Agent did not respond within 24 hours",

@@ -4,6 +4,7 @@ const router = express.Router();
 const SiteVisit = require("../models/SiteVisit");
 const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
+const Lead = require("../models/Lead");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -38,6 +39,7 @@ router.post("/add", fetchuser, async (req, res) => {
     const loggedUser = await User.findById(req.user.id);
 
     let data = {
+      lead: req.body.lead, // ✅ NEW
       customer: req.body.customer,
       location: req.body.location,
       colony: req.body.colony,
@@ -59,6 +61,19 @@ router.post("/add", fetchuser, async (req, res) => {
 
     const visit = await SiteVisit.create(data);
 
+    // ✅ UPDATE LEAD STATUS
+
+    await Lead.findByIdAndUpdate(req.body.lead, {
+      status: "converted",
+      convertedAt: new Date(),
+      $push: {
+        notes: {
+          text: "Lead converted via site visit",
+          by: loggedUser._id,
+        },
+      },
+    });
+
     res.json(visit);
   } catch (error) {
     console.log(error);
@@ -68,12 +83,11 @@ router.post("/add", fetchuser, async (req, res) => {
 
 router.put("/action/:id", fetchuser, async (req, res) => {
   try {
-
     const loggedUser = await User.findById(req.user.id);
 
     if (loggedUser.role !== "admin" && loggedUser.role !== "staff") {
       return res.status(403).json({
-        message: "Only admin or staff can take action"
+        message: "Only admin or staff can take action",
       });
     }
 
@@ -88,10 +102,9 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
     // 🔥 REJECT (NOTE REQUIRED)
     else if (action === "reject") {
-
       if (!note) {
         return res.status(400).json({
-          message: "Note is required when rejecting"
+          message: "Note is required when rejecting",
         });
       }
 
@@ -100,26 +113,23 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
     // 🔥 RESCHEDULE (NOTE + DATE REQUIRED)
     else if (action === "reschedule") {
-
       if (!visitDate) {
         return res.status(400).json({
-          message: "visitDate is required"
+          message: "visitDate is required",
         });
       }
 
       if (!note) {
         return res.status(400).json({
-          message: "Note is required when rescheduling"
+          message: "Note is required when rescheduling",
         });
       }
 
       update.status = "rescheduled";
       update.visitDate = visitDate;
-    }
-
-    else {
+    } else {
       return res.status(400).json({
-        message: "Invalid action"
+        message: "Invalid action",
       });
     }
 
@@ -129,19 +139,16 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         notes: {
           text: note,
           by: loggedUser._id,
-          date: new Date()
-        }
+          date: new Date(),
+        },
       };
     }
 
-    const visit = await SiteVisit.findByIdAndUpdate(
-      req.params.id,
-      update,
-      { new: true }
-    ).populate("notes.by", "name");
+    const visit = await SiteVisit.findByIdAndUpdate(req.params.id, update, {
+      new: true,
+    }).populate("notes.by", "name");
 
     res.json(visit);
-
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
@@ -150,12 +157,11 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
 router.post("/add-note/:id", fetchuser, async (req, res) => {
   try {
-
     const { note } = req.body;
 
     if (!note) {
       return res.status(400).json({
-        message: "Note is required"
+        message: "Note is required",
       });
     }
 
@@ -163,30 +169,31 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
 
     if (!visit) {
       return res.status(404).json({
-        message: "Site visit not found"
+        message: "Site visit not found",
       });
     }
 
     // 🔥 Only allow if status is approval or scheduled
     if (!["approval", "scheduled"].includes(visit.status)) {
       return res.status(400).json({
-        message: "Notes allowed only in approval or scheduled status"
+        message: "Notes allowed only in approval or scheduled status",
       });
     }
 
     visit.notes.push({
       text: note,
       by: req.user.id,
-      date: new Date()
+      date: new Date(),
     });
 
     await visit.save();
 
-    const updated = await SiteVisit.findById(req.params.id)
-      .populate("notes.by", "name");
+    const updated = await SiteVisit.findById(req.params.id).populate(
+      "notes.by",
+      "name",
+    );
 
     res.json(updated);
-
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
