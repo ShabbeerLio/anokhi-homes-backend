@@ -19,7 +19,7 @@ cron.schedule("0 * * * *", async () => {
     lead.isAccepted = false;
 
     lead.notes.push({
-      text: "Agent did not respond within 24 hours",
+      text: "Associate did not respond within 24 hours",
     });
 
     await lead.save();

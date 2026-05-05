@@ -5,6 +5,7 @@ const Booking = require("../models/Booking");
 const Colony = require("../models/Colony");
 const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
+const SiteVisit = require("../models/SiteVisit");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -71,6 +72,7 @@ router.post("/add", fetchuser, async (req, res) => {
     const fullAmount = baseAmount - bookingAmount - agreementAmount;
 
     let data = {
+      sitevisitId: req.body.sitevisit,
       customer,
       location,
       colony,
@@ -117,6 +119,18 @@ router.post("/add", fetchuser, async (req, res) => {
     const booking = await Booking.create(data);
     plot.status = "booked";
     await colonyData.save();
+
+    await SiteVisit.findByIdAndUpdate(req.body.sitevisit, {
+      status: "completed",
+      convertedAt: new Date(),
+      $push: {
+        notes: {
+          text: "Site visit completed",
+          by: loggedUser._id,
+        },
+      },
+    });
+
     res.json(booking);
   } catch (error) {
     console.log(error);
@@ -188,13 +202,17 @@ router.put("/action/:id", fetchuser, async (req, res) => {
   }
 });
 
+/* =========================
+   ADD NOTE TO LEAD
+========================= */
+
 router.post("/add-note/:id", fetchuser, async (req, res) => {
   try {
     const { note } = req.body;
 
     if (!note) {
       return res.status(400).json({
-        message: "Note required",
+        message: "Note is required",
       });
     }
 
@@ -206,15 +224,102 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
       });
     }
 
+    // 🔥 ROLE CHECK (optional but recommended)
+    const loggedUser = await User.findById(req.user.id);
+
+    // Agent can only add note to their own lead
+    if (
+      loggedUser.role === "agent" &&
+      booking.agent?.toString() !== loggedUser._id.toString()
+    ) {
+      return res.status(403).json({
+        message: "Not allowed to add note to this booking",
+      });
+    }
+
+    // 🔥 ADD NOTE
     booking.notes.push({
       text: note,
-      by: req.user.id,
+      by: loggedUser._id,
     });
 
     await booking.save();
 
-    res.json(booking);
+    res.json({
+      message: "Note added successfully",
+      booking,
+    });
   } catch (error) {
+    console.log(error);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/edit-note/:bookingId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const { note } = req.body;
+
+    if (!note) {
+      return res.status(400).json({ message: "Note is required" });
+    }
+
+    const booking = await Booking.findById(req.params.bookingId);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = booking.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can edit
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.text = note;
+    noteItem.editedAt = new Date();
+
+    await booking.save();
+
+    res.json({ message: "Note updated", booking });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.delete("/delete-note/:bookingId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.bookingId);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = booking.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can delete
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.deleteOne();
+
+    await booking.save();
+
+    res.json({ message: "Note deleted", booking });
+  } catch (err) {
+    console.error(err);
     res.status(500).send("Server Error");
   }
 });

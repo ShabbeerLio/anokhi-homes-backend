@@ -4,6 +4,11 @@ const mongoose = require("mongoose");
 
 const bookingSchema = new mongoose.Schema(
   {
+    sitevisitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SiteVisit",
+      required: true,
+    },
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -73,13 +78,13 @@ const bookingSchema = new mongoose.Schema(
     notes: [
       {
         text: String,
-        by: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-        },
         date: {
           type: Date,
           default: Date.now,
+        },
+        by: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
         },
       },
     ],

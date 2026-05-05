@@ -39,7 +39,7 @@ router.post("/add", fetchuser, async (req, res) => {
     const loggedUser = await User.findById(req.user.id);
 
     let data = {
-      lead: req.body.lead, // ✅ NEW
+      lead: req.body.lead,
       customer: req.body.customer,
       location: req.body.location,
       colony: req.body.colony,
@@ -155,6 +155,10 @@ router.put("/action/:id", fetchuser, async (req, res) => {
   }
 });
 
+/* =========================
+   ADD NOTE TO LEAD
+========================= */
+
 router.post("/add-note/:id", fetchuser, async (req, res) => {
   try {
     const { note } = req.body;
@@ -173,29 +177,102 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
       });
     }
 
-    // 🔥 Only allow if status is approval or scheduled
-    if (!["approval", "scheduled"].includes(visit.status)) {
-      return res.status(400).json({
-        message: "Notes allowed only in approval or scheduled status",
+    // 🔥 ROLE CHECK (optional but recommended)
+    const loggedUser = await User.findById(req.user.id);
+
+    // Agent can only add note to their own lead
+    if (
+      loggedUser.role === "agent" &&
+      lead.agent?.toString() !== loggedUser._id.toString()
+    ) {
+      return res.status(403).json({
+        message: "Not allowed to add note to this lead",
       });
     }
 
+    // 🔥 ADD NOTE
     visit.notes.push({
       text: note,
-      by: req.user.id,
-      date: new Date(),
+      by: loggedUser._id,
     });
 
     await visit.save();
 
-    const updated = await SiteVisit.findById(req.params.id).populate(
-      "notes.by",
-      "name",
-    );
-
-    res.json(updated);
+    res.json({
+      message: "Note added successfully",
+      visit,
+    });
   } catch (error) {
     console.log(error);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const { note } = req.body;
+
+    if (!note) {
+      return res.status(400).json({ message: "Note is required" });
+    }
+
+    const visit = await SiteVisit.findById(req.params.visitId);
+    if (!visit) return res.status(404).json({ message: "Site visit not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = visit.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can edit
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.text = note;
+    noteItem.editedAt = new Date();
+
+    await visit.save();
+
+    res.json({ message: "Note updated", visit });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+router.delete("/delete-note/:visitId/:noteId", fetchuser, async (req, res) => {
+  try {
+    const visit = await SiteVisit.findById(req.params.visitId);
+    if (!visit) return res.status(404).json({ message: "Site visit not found" });
+
+    const loggedUser = await User.findById(req.user.id);
+
+    const noteItem = visit.notes.id(req.params.noteId);
+    if (!noteItem) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // ✅ Only creator OR admin can delete
+    if (
+      noteItem.by.toString() !== loggedUser._id.toString() &&
+      loggedUser.role !== "admin"
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    noteItem.deleteOne();
+
+    await visit.save();
+
+    res.json({ message: "Note deleted", visit });
+  } catch (err) {
+    console.error(err);
     res.status(500).send("Server Error");
   }
 });
