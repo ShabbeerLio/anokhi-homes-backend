@@ -25,7 +25,28 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("location", "name")
       .populate("colony", "name");
 
-    res.json(bookings);
+    const populatePlotData = async (booking) => {
+      const colonyData = await Colony.findById(booking.colony);
+
+      if (!colonyData) return booking;
+
+      const plotData = colonyData.layout.plots.find(
+        (p) => p._id.toString() === booking.plot.toString(),
+      );
+
+      if (plotData) {
+        booking = booking.toObject();
+        booking.plot = plotData;
+      }
+
+      return booking;
+    };
+
+    const bookingsWithPlotDetails = await Promise.all(
+      bookings.map(populatePlotData),
+    );
+
+    res.json(bookingsWithPlotDetails);
   } catch (error) {
     res.status(500).send("Server Error");
   }
@@ -77,7 +98,7 @@ router.post("/add", fetchuser, async (req, res) => {
 
     // 🔥 FIND PLOT
     const plotData = colonyData.layout.plots.find(
-      (p) => p._id.toString() === plot.toString()
+      (p) => p._id.toString() === plot.toString(),
     );
 
     if (!plotData) {
@@ -103,9 +124,7 @@ router.post("/add", fetchuser, async (req, res) => {
 
     // 🔥 DATE DIFFERENCE
     const getDaysDiff = (from, to) => {
-      return Math.ceil(
-        (new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24)
-      );
+      return Math.ceil((new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24));
     };
 
     const bookingDue = getDaysDiff(new Date(), bookingDate);
@@ -183,13 +202,11 @@ router.post("/add", fetchuser, async (req, res) => {
     });
 
     res.json(booking);
-
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
   }
 });
-
 
 router.put("/action/:id", fetchuser, async (req, res) => {
   try {
