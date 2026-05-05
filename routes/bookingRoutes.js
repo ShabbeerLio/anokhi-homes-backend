@@ -72,7 +72,7 @@ router.post("/add", fetchuser, async (req, res) => {
     const fullAmount = baseAmount - bookingAmount - agreementAmount;
 
     let data = {
-      sitevisitId: req.body.sitevisit,
+      sitevisitId: req.body.visit,
       customer,
       location,
       colony,
