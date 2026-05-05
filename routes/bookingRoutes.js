@@ -24,7 +24,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("agent", "name phone")
       .populate("location", "name")
       .populate("colony", "name")
-      .populate("plot", "plotNumber");
+      // .populate("plot", "plotNumber");
 
     res.json(bookings);
   } catch (error) {
