@@ -30,73 +30,105 @@ router.get("/", fetchuser, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+/* =========================
+   ADD BOOKING
+========================= */
 
 router.post("/add", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
     const {
+      customer,
+      location,
+      colony,
+      plot,
       requestAmount,
-      termsAccepted,
+      sitevisitId,
       bookingDate,
       agreementDate,
       fullDate,
+      termsAccepted,
     } = req.body;
 
+    // ✅ VALIDATIONS
+    if (!plot) {
+      return res.status(400).json({ message: "Plot is required" });
+    }
+
+    if (!termsAccepted) {
+      return res.status(400).json({
+        message: "Terms & conditions must be accepted",
+      });
+    }
+
+    if (!bookingDate || !agreementDate || !fullDate) {
+      return res.status(400).json({
+        message: "All payment dates are required",
+      });
+    }
+
     // 🔥 GET COLONY
-    const colonyData = await Colony.findById(req.body.colony);
+    const colonyData = await Colony.findById(colony);
 
     if (!colonyData) {
       return res.status(404).json({ message: "Colony not found" });
     }
 
     // 🔥 FIND PLOT
-    const plot = colonyData.layout.plots.find(
-      (p) => p._id.toString() === req.body.plot.toString(),
+    const plotData = colonyData.layout.plots.find(
+      (p) => p._id.toString() === plot.toString()
     );
 
-    if (!plot) {
+    if (!plotData) {
       return res.status(404).json({ message: "Plot not found" });
     }
 
     // 🔥 CHECK AVAILABILITY
-    if (plot.status !== "available") {
+    if (plotData.status !== "available") {
       return res.status(400).json({
         message: "Plot is not available",
       });
     }
 
-    // 🔥 CALCULATE TOTAL (sqft based)
-    const totalAmount = plot.price * plot.area;
+    // 🔥 CALCULATIONS
+    const totalAmount = plotData.price * plotData.area;
 
-    // 🔥 PAYMENT BASE
-    const finalAmount = requestAmount || totalAmount;
-    const baseAmount = finalAmount * plot.area;
+    const finalRate = requestAmount || plotData.price;
+    const baseAmount = finalRate * plotData.area;
 
     const bookingAmount = baseAmount * 0.1;
     const agreementAmount = baseAmount * 0.25;
     const fullAmount = baseAmount - bookingAmount - agreementAmount;
 
+    // 🔥 DATE DIFFERENCE
     const getDaysDiff = (from, to) => {
-      if (!from || !to) return null;
-      return Math.ceil((new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24));
+      return Math.ceil(
+        (new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24)
+      );
     };
 
     const bookingDue = getDaysDiff(new Date(), bookingDate);
     const agreementDue = getDaysDiff(bookingDate, agreementDate);
     const fullDue = getDaysDiff(agreementDate, fullDate);
 
+    // 🔥 DATA OBJECT
     let data = {
-      sitevisitId: req.body.visit,
-      customer: req.body.customer,
-      location: req.body.location,
-      colony: req.body.colony,
-      plot: req.body.plot,
-      pricePerSqft: plot.price,
-      plotArea: plot.area,
+      sitevisitId,
+      customer,
+      location,
+      colony,
+      plot,
+
+      pricePerSqft: plotData.price,
+      plotArea: plotData.area,
+
       totalAmount,
       requestAmount,
+      termsAccepted,
+
       createdBy: user._id,
+
       paymentSchedule: {
         booking: {
           percent: 10,
@@ -126,32 +158,38 @@ router.post("/add", fetchuser, async (req, res) => {
     if (user.role === "admin" || user.role === "staff") {
       data.agent = req.body.agent;
       data.status = "pending";
-    } else if (user.role === "agent") {
+    } else {
       data.agent = user._id;
       data.status = "approval";
     }
 
+    // 🔥 CREATE BOOKING
     const booking = await Booking.create(data);
-    plot.status = "booked";
+
+    // 🔥 MARK PLOT BOOKED
+    plotData.status = "booked";
     await colonyData.save();
 
-    await SiteVisit.findByIdAndUpdate(req.body.sitevisit, {
+    // 🔥 UPDATE SITE VISIT
+    await SiteVisit.findByIdAndUpdate(sitevisitId, {
       status: "completed",
       convertedAt: new Date(),
       $push: {
         notes: {
-          text: "Site visit completed",
-          by: loggedUser._id,
+          text: "Site visit completed & booking created",
+          by: user._id,
         },
       },
     });
 
     res.json(booking);
+
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
   }
 });
+
 
 router.put("/action/:id", fetchuser, async (req, res) => {
   try {
