@@ -30,14 +30,22 @@ const bookingSchema = new mongoose.Schema(
       ref: "Colony",
       required: true,
     },
-
-    plotId: String, // 🔥 P-1, A-12 etc
+    plot: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Plot",
+      required: true,
+    },
+    
     pricePerSqft: Number,
     plotArea: Number,
 
     totalAmount: Number, // auto from plot
 
-    requestAmount: Number, // 🔥 NEW (agent request)
+    requestAmount: Number,
+    termsAccepted: {
+      type: Boolean,
+      default: false,
+    },
 
     amountPaid: {
       type: Number,
@@ -54,6 +62,7 @@ const bookingSchema = new mongoose.Schema(
       booking: {
         percent: Number,
         amount: Number,
+        dueDays: Number,
         paid: Boolean,
         date: Date,
       },

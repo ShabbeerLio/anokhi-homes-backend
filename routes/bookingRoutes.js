@@ -35,10 +35,10 @@ router.post("/add", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
-    const { customer, location, colony, plotId, requestAmount } = req.body;
+    const {requestAmount } = req.body;
 
     // 🔥 GET COLONY
-    const colonyData = await Colony.findById(colony);
+    const colonyData = await Colony.findById(req.body.colony);
 
     if (!colonyData) {
       return res.status(404).json({ message: "Colony not found" });
@@ -46,7 +46,7 @@ router.post("/add", fetchuser, async (req, res) => {
 
     // 🔥 FIND PLOT
     const plot = colonyData.layout.plots.find(
-      (p) => p._id.toString() === plotId,
+      (p) => p._id.toString() === req.body.plot.toString(),
     );
 
     if (!plot) {
@@ -73,10 +73,10 @@ router.post("/add", fetchuser, async (req, res) => {
 
     let data = {
       sitevisitId: req.body.visit,
-      customer,
-      location,
-      colony,
-      plotId,
+      customer: req.body.customer,
+      location: req.body.location,
+      colony: req.body.colony,
+      plot: req.body.plot,
 
       pricePerSqft: plot.price,
       plotArea: plot.area,
@@ -95,13 +95,11 @@ router.post("/add", fetchuser, async (req, res) => {
         agreement: {
           percent: 25,
           amount: agreementAmount,
-          dueDays: 30,
           paid: false,
         },
         full: {
           percent: 65,
           amount: fullAmount,
-          dueDays: 90,
           paid: false,
         },
       },
@@ -293,36 +291,41 @@ router.put("/edit-note/:bookingId/:noteId", fetchuser, async (req, res) => {
   }
 });
 
-router.delete("/delete-note/:bookingId/:noteId", fetchuser, async (req, res) => {
-  try {
-    const booking = await Booking.findById(req.params.bookingId);
-    if (!booking) return res.status(404).json({ message: "Booking not found" });
+router.delete(
+  "/delete-note/:bookingId/:noteId",
+  fetchuser,
+  async (req, res) => {
+    try {
+      const booking = await Booking.findById(req.params.bookingId);
+      if (!booking)
+        return res.status(404).json({ message: "Booking not found" });
 
-    const loggedUser = await User.findById(req.user.id);
+      const loggedUser = await User.findById(req.user.id);
 
-    const noteItem = booking.notes.id(req.params.noteId);
-    if (!noteItem) {
-      return res.status(404).json({ message: "Note not found" });
+      const noteItem = booking.notes.id(req.params.noteId);
+      if (!noteItem) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+
+      // ✅ Only creator OR admin can delete
+      if (
+        noteItem.by.toString() !== loggedUser._id.toString() &&
+        loggedUser.role !== "admin"
+      ) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
+
+      noteItem.deleteOne();
+
+      await booking.save();
+
+      res.json({ message: "Note deleted", booking });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Server Error");
     }
-
-    // ✅ Only creator OR admin can delete
-    if (
-      noteItem.by.toString() !== loggedUser._id.toString() &&
-      loggedUser.role !== "admin"
-    ) {
-      return res.status(403).json({ message: "Not allowed" });
-    }
-
-    noteItem.deleteOne();
-
-    await booking.save();
-
-    res.json({ message: "Note deleted", booking });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Server Error");
-  }
-});
+  },
+);
 
 router.delete("/delete/:id", fetchuser, async (req, res) => {
   try {
