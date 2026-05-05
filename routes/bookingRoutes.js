@@ -23,8 +23,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("customer", "name phone")
       .populate("agent", "name phone")
       .populate("location", "name")
-      .populate("colony", "name")
-      // .populate("plot", "plotNumber");
+      .populate("colony", "name");
 
     res.json(bookings);
   } catch (error) {
