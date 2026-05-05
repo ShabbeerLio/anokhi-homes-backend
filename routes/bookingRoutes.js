@@ -35,7 +35,13 @@ router.post("/add", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
-    const {requestAmount } = req.body;
+    const {
+      requestAmount,
+      termsAccepted,
+      bookingDate,
+      agreementDate,
+      fullDate,
+    } = req.body;
 
     // 🔥 GET COLONY
     const colonyData = await Colony.findById(req.body.colony);
@@ -71,36 +77,47 @@ router.post("/add", fetchuser, async (req, res) => {
     const agreementAmount = baseAmount * 0.25;
     const fullAmount = baseAmount - bookingAmount - agreementAmount;
 
+    const getDaysDiff = (from, to) => {
+      if (!from || !to) return null;
+      return Math.ceil((new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24));
+    };
+
+    const bookingDue = getDaysDiff(new Date(), bookingDate);
+    const agreementDue = getDaysDiff(bookingDate, agreementDate);
+    const fullDue = getDaysDiff(agreementDate, fullDate);
+
     let data = {
       sitevisitId: req.body.visit,
       customer: req.body.customer,
       location: req.body.location,
       colony: req.body.colony,
       plot: req.body.plot,
-
       pricePerSqft: plot.price,
       plotArea: plot.area,
-
       totalAmount,
       requestAmount,
-
       createdBy: user._id,
-
       paymentSchedule: {
         booking: {
           percent: 10,
           amount: bookingAmount,
+          dueDays: bookingDue,
           paid: false,
+          date: new Date(bookingDate),
         },
         agreement: {
           percent: 25,
           amount: agreementAmount,
+          dueDays: agreementDue,
           paid: false,
+          date: new Date(agreementDate),
         },
         full: {
           percent: 65,
           amount: fullAmount,
+          dueDays: fullDue,
           paid: false,
+          date: new Date(fullDate),
         },
       },
     };
