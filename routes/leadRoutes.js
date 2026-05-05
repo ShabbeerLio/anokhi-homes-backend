@@ -64,6 +64,15 @@ router.get("/", fetchuser, async (req, res) => {
       });
     }
 
+    // ✅ USER → ONLY THEIR LEADS
+    else if (user.role === "user") {
+      leads = await Lead.find({
+        customer: user._id, // 🔥 IMPORTANT
+      })
+        .populate("agent", "name")
+        .populate("notes.by", "name");
+    }
+
     res.json(leads);
   } catch (err) {
     res.status(500).send("Server Error");

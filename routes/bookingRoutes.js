@@ -17,6 +17,8 @@ router.get("/", fetchuser, async (req, res) => {
       query = {};
     } else if (user.role === "agent") {
       query = { agent: user._id };
+    } else if (user.role === "user") {
+      query = { customer: user._id };
     }
 
     const bookings = await Booking.find(query)

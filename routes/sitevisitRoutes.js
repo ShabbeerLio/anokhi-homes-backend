@@ -21,6 +21,10 @@ router.get("/", fetchuser, async (req, res) => {
     else if (loggedUser.role === "agent") {
       query = { agent: loggedUser._id };
     }
+    // user → only own
+    else if (loggedUser.role === "user") {
+      query = { customer: loggedUser._id };
+    }
 
     const visits = await SiteVisit.find(query)
       .populate("customer", "name phone")
