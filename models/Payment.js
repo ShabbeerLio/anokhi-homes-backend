@@ -22,7 +22,7 @@ const paymentSchema = new mongoose.Schema(
 
     paymentMode: {
       type: String,
-      enum: ["cash", "upi", "bank"],
+      enum: ["cash", "upi", "bank","cheque"],
     },
     paymentType: {
       type: String,

@@ -33,8 +33,8 @@ router.get("/", fetchuser, async (req, res) => {
     const payments = await Payment.find(query)
       .populate("customer", "name phone")
       .populate("agent", "name phone")
-      .populate("booking")
-      .populate("notes.by", "name role");
+      .populate("booking");
+    // .populate("notes.by", "name role");
 
     res.json(payments);
   } catch (error) {
@@ -111,38 +111,92 @@ router.get("/booking/:bookingId", fetchuser, async (req, res) => {
   }
 });
 
-router.get("/summary/:bookingId", fetchuser, async (req, res) => {
+router.post("/add", fetchuser, async (req, res) => {
   try {
-    const bookingId = req.params.bookingId;
+    const user = await User.findById(req.user.id);
 
-    const booking = await Booking.findById(bookingId);
+    const { booking, amount, paymentMode, paymentType, transactionId } =
+      req.body;
 
-    if (!booking) {
+    const bookingData = await Booking.findById(booking);
+
+    if (!bookingData) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const payments = await Payment.find({
-      booking: bookingId,
-      status: "approved",
-    });
+    let data = {
+      booking,
+      customer: bookingData.customer,
+      agent: bookingData.agent,
+      amount,
+      paymentMode,
+      paymentType,
+      transactionId,
+      paymentDate: new Date(),
+    };
 
-    const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+    // 🔥 ROLE LOGIC
+    if (user.role === "agent") {
+      data.status = "pending"; // needs approval
+    } else if (user.role === "admin" || user.role === "staff") {
+      data.status = "approved"; // auto approved
+    }
 
-    const dueAmount = booking.totalAmount - paidAmount;
+    const payment = await Payment.create(data);
 
-    let dueStatus = "No Due";
-    if (paidAmount === 0) dueStatus = "Full Due";
-    else if (paidAmount < booking.totalAmount) dueStatus = "Partial Due";
+    // ======================================================
+    // ✅ 🔥 IF AUTO APPROVED → UPDATE BOOKING HERE
+    // ======================================================
+    if (data.status === "approved") {
+      const bookingDoc = await Booking.findById(booking);
 
-    res.json({
-      bookingId,
-      totalAmount: booking.totalAmount,
-      paidAmount,
-      dueAmount,
-      dueStatus,
-      payments,
-    });
+      // ✅ 1. UPDATE TOTAL PAID
+      bookingDoc.amountPaid += Number(amount);
+
+      // ✅ 2. HANDLE INSTALLMENT
+      const schedule = bookingDoc.paymentSchedule[paymentType];
+
+      if (schedule) {
+        // 🔥 calculate total paid for this type
+        const totalPaidForType = await Payment.aggregate([
+          {
+            $match: {
+              booking: bookingDoc._id,
+              paymentType,
+              status: "approved",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: "$amount" },
+            },
+          },
+        ]);
+
+        const paidAmount = totalPaidForType[0]?.total || 0;
+
+        if (paidAmount >= schedule.amount) {
+          schedule.paid = true;
+          schedule.date = new Date();
+        }
+      }
+
+      // ✅ 3. AUTO CONFIRM BOOKING
+      if (
+        bookingDoc.paymentSchedule.booking.paid &&
+        bookingDoc.paymentSchedule.agreement.paid &&
+        bookingDoc.paymentSchedule.full.paid
+      ) {
+        bookingDoc.status = "confirmed";
+      }
+
+      await bookingDoc.save();
+    }
+
+    res.json(payment);
   } catch (error) {
+    console.log(error);
     res.status(500).send("Server Error");
   }
 });
@@ -177,18 +231,32 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       return res.status(404).json({ message: "Payment not found" });
     }
 
+    const booking = await Booking.findById(payment.booking);
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
     if (action === "approve") {
       payment.status = "approved";
 
-      // 🔥 UPDATE BOOKING PAYMENT SCHEDULE
-      const booking = await Booking.findById(payment.booking);
+      // ✅ 1. UPDATE TOTAL PAID AMOUNT
+      booking.amountPaid += payment.amount;
 
-      if (booking && booking.paymentSchedule[payment.paymentType]) {
-        booking.paymentSchedule[payment.paymentType].paid = true;
-        booking.paymentSchedule[payment.paymentType].date = new Date();
+      // ✅ 2. MARK INSTALLMENT AS PAID
+      const schedule = booking.paymentSchedule[payment.paymentType];
 
-        await booking.save();
+      if (schedule) {
+        schedule.paid = true;
+        schedule.date = new Date();
       }
+
+      // ✅ 3. AUTO COMPLETE BOOKING (optional but powerful)
+      if (booking.amountPaid >= booking.totalAmount) {
+        booking.status = "confirmed";
+      }
+
+      await booking.save();
     } else if (action === "reject") {
       payment.status = "rejected";
     } else {
