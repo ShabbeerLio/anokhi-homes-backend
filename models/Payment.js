@@ -22,7 +22,7 @@ const paymentSchema = new mongoose.Schema(
 
     paymentMode: {
       type: String,
-      enum: ["cash", "upi", "bank","cheque"],
+      enum: ["cash", "upi", "bank", "cheque"],
     },
     paymentType: {
       type: String,
@@ -41,6 +41,15 @@ const paymentSchema = new mongoose.Schema(
     attachment: String,
 
     paymentDate: Date,
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
   },
   { timestamps: true },
 );

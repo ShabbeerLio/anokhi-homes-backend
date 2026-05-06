@@ -5,6 +5,7 @@ const Payment = require("../models/Payment");
 const User = require("../models/User");
 const Booking = require("../models/Booking");
 const fetchuser = require("../middleware/fetchUser");
+const Colony = require("../models/Colony");
 
 // =========================
 // GET ALL PAYMENTS
@@ -15,30 +16,53 @@ router.get("/", fetchuser, async (req, res) => {
 
     let query = {};
 
-    // 👑 Admin / Staff → ALL
     if (user.role === "admin" || user.role === "staff") {
       query = {};
-    }
-
-    // 🧑‍💼 Agent → only their payments
-    else if (user.role === "agent") {
+    } else if (user.role === "agent") {
       query = { agent: user._id };
-    }
-
-    // 👤 Customer → only their payments
-    else {
+    } else {
       query = { customer: user._id };
     }
 
     const payments = await Payment.find(query)
       .populate("customer", "name phone")
       .populate("agent", "name phone")
-      .populate("booking");
-    // .populate("notes.by", "name role");
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "location", select: "name" },
+          { path: "colony", select: "name" },
+          { path: "agent", select: "name phone" },
+          { path: "customer", select: "name phone" },
+        ],
+      });
 
-    res.json(payments);
+      // console.log(payments,"pymt")
+    const populatePlotData = async (payment) => {
+      if (!payment.booking) return payment;
+
+      const colonyData = await Colony.findById(payment.booking.colony);
+
+      if (!colonyData) return payment;
+
+      const plotData = colonyData.layout.plots.find(
+        (p) => p._id.toString() === payment.booking.plot.toString(),
+      );
+
+      if (plotData) {
+        payment = payment.toObject();
+        payment.booking.plot = plotData;
+      }
+
+      return payment;
+    };
+
+    const paymentsWithPlot = await Promise.all(payments.map(populatePlotData));
+
+    res.json(paymentsWithPlot);
   } catch (error) {
     res.status(500).send("Server Error");
+    console.log(error,"error")
   }
 });
 
@@ -67,6 +91,7 @@ router.post("/add", fetchuser, async (req, res) => {
       paymentType,
       transactionId,
       paymentDate: new Date(),
+      createdBy: user._id,
     };
 
     // 🔥 ROLE LOGIC
@@ -74,72 +99,7 @@ router.post("/add", fetchuser, async (req, res) => {
       data.status = "pending"; // needs approval
     } else if (user.role === "admin" || user.role === "staff") {
       data.status = "approved"; // auto approved
-    }
-
-    const payment = await Payment.create(data);
-
-    res.json(payment);
-  } catch (error) {
-    console.log(error);
-    res.status(500).send("Server Error");
-  }
-});
-
-router.get("/booking/:bookingId", fetchuser, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-
-    let query = {
-      booking: req.params.bookingId,
-    };
-
-    // Agent → restrict
-    if (user.role === "agent") {
-      query.agent = user._id;
-    }
-
-    // Customer → restrict
-    if (user.role === "user") {
-      query.customer = user._id;
-    }
-
-    const payments = await Payment.find(query);
-
-    res.json(payments);
-  } catch (error) {
-    res.status(500).send("Server Error");
-  }
-});
-
-router.post("/add", fetchuser, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-
-    const { booking, amount, paymentMode, paymentType, transactionId } =
-      req.body;
-
-    const bookingData = await Booking.findById(booking);
-
-    if (!bookingData) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    let data = {
-      booking,
-      customer: bookingData.customer,
-      agent: bookingData.agent,
-      amount,
-      paymentMode,
-      paymentType,
-      transactionId,
-      paymentDate: new Date(),
-    };
-
-    // 🔥 ROLE LOGIC
-    if (user.role === "agent") {
-      data.status = "pending"; // needs approval
-    } else if (user.role === "admin" || user.role === "staff") {
-      data.status = "approved"; // auto approved
+      data.approvedBy = user._id;
     }
 
     const payment = await Payment.create(data);
@@ -201,6 +161,42 @@ router.post("/add", fetchuser, async (req, res) => {
   }
 });
 
+router.get("/summary/:bookingId", fetchuser, async (req, res) => {
+  try {
+    const bookingId = req.params.bookingId;
+
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    const payments = await Payment.find({
+      booking: bookingId,
+      status: "approved",
+    });
+
+    const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+
+    const dueAmount = booking.totalAmount - paidAmount;
+
+    let dueStatus = "No Due";
+    if (paidAmount === 0) dueStatus = "Full Due";
+    else if (paidAmount < booking.totalAmount) dueStatus = "Partial Due";
+
+    res.json({
+      bookingId,
+      totalAmount: booking.totalAmount,
+      paidAmount,
+      dueAmount,
+      dueStatus,
+      payments,
+    });
+  } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
 router.put("/edit/:id", fetchuser, async (req, res) => {
   try {
     const payment = await Payment.findByIdAndUpdate(req.params.id, req.body, {
@@ -239,6 +235,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
     if (action === "approve") {
       payment.status = "approved";
+      payment.approvedBy = user._id;
 
       // ✅ 1. UPDATE TOTAL PAID AMOUNT
       booking.amountPaid += payment.amount;
