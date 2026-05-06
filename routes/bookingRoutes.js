@@ -25,7 +25,8 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("customer", "name phone")
       .populate("agent", "name phone")
       .populate("location", "name")
-      .populate("colony", "name");
+      .populate("colony", "name")
+      .populate("notes.by", "name");
 
     const populatePlotData = async (booking) => {
       const colonyData = await Colony.findById(booking.colony);
