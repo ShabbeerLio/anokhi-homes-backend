@@ -31,7 +31,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("agent", "name phone")
       .populate("location", "name")
       .populate("colony", "name")
-      .populate("notes.by", "name");
+      .populate("notes.by", "name role");
 
     res.json(visits);
   } catch (error) {

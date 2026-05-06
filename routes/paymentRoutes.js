@@ -33,7 +33,8 @@ router.get("/", fetchuser, async (req, res) => {
     const payments = await Payment.find(query)
       .populate("customer", "name phone")
       .populate("agent", "name phone")
-      .populate("booking");
+      .populate("booking")
+      .populate("notes.by", "name role");
 
     res.json(payments);
   } catch (error) {

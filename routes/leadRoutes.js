@@ -70,7 +70,7 @@ router.get("/", fetchuser, async (req, res) => {
         customer: user._id, // 🔥 IMPORTANT
       })
         .populate("agent", "name")
-        .populate("notes.by", "name");
+        .populate("notes.by", "name role");
     }
 
     res.json(leads);
