@@ -146,6 +146,7 @@ router.post("/add", fetchuser, async (req, res) => {
       plotArea: plotData.area,
 
       totalAmount,
+      finalAmount: baseAmount,
       requestAmount,
       termsAccepted,
 

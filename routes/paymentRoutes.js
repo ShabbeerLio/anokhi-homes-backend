@@ -186,7 +186,7 @@ router.get("/summary/:bookingId", fetchuser, async (req, res) => {
 
     res.json({
       bookingId,
-      totalAmount: booking.totalAmount,
+      totalAmount: booking.finalAmount,
       paidAmount,
       dueAmount,
       dueStatus,
