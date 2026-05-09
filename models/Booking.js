@@ -40,7 +40,7 @@ const bookingSchema = new mongoose.Schema(
     plotArea: Number,
 
     totalAmount: Number,
-    baseAmount: Number, 
+    finalAmount: Number, 
 
     requestAmount: Number,
     termsAccepted: {
