@@ -35,11 +35,12 @@ const bookingSchema = new mongoose.Schema(
       ref: "Plot",
       required: true,
     },
-    
+
     pricePerSqft: Number,
     plotArea: Number,
 
-    totalAmount: Number, // auto from plot
+    totalAmount: Number,
+    baseAmount: Number, 
 
     requestAmount: Number,
     termsAccepted: {
