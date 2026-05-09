@@ -178,11 +178,11 @@ router.get("/summary/:bookingId", fetchuser, async (req, res) => {
 
     const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
 
-    const dueAmount = booking.totalAmount - paidAmount;
+    const dueAmount = booking.finalAmount - paidAmount;
 
     let dueStatus = "No Due";
     if (paidAmount === 0) dueStatus = "Full Due";
-    else if (paidAmount < booking.totalAmount) dueStatus = "Partial Due";
+    else if (paidAmount < booking.finalAmount) dueStatus = "Partial Due";
 
     res.json({
       bookingId,
