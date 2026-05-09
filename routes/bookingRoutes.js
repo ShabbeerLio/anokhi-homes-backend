@@ -6,6 +6,8 @@ const Colony = require("../models/Colony");
 const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
 const SiteVisit = require("../models/SiteVisit");
+const Lead = require("../models/Lead");
+const Payment = require("../models/Payment");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -409,6 +411,231 @@ router.delete("/delete/:id", fetchuser, async (req, res) => {
 
     res.json({ message: "Booking deleted" });
   } catch (error) {
+    res.status(500).send("Server Error");
+  }
+});
+
+router.get("/timeline/:bookingId", fetchuser, async (req, res) => {
+  try {
+    const bookingId = req.params.bookingId;
+
+    // =====================================
+    // BOOKING
+    // =====================================
+
+    const booking = await Booking.findById(bookingId)
+      .populate("customer", "name")
+      .populate("agent", "name")
+      .populate("createdBy", "name")
+      .populate("notes.by", "name");
+
+    if (!booking) {
+      return res.status(404).json({
+        message: "Booking not found",
+      });
+    }
+
+    // =====================================
+    // SITE VISIT
+    // =====================================
+
+    const siteVisit = await SiteVisit.findById(booking.sitevisitId)
+      .populate("createdBy", "name")
+      .populate("notes.by", "name");
+
+    // =====================================
+    // LEAD
+    // =====================================
+
+    const lead = await Lead.findById(siteVisit?.lead)
+      .populate("assignedBy", "name")
+      .populate("agent", "name")
+      .populate("rejectedBy", "name")
+      .populate("notes.by", "name");
+
+    // =====================================
+    // PAYMENTS
+    // =====================================
+
+    const payments = await Payment.find({
+      booking: bookingId,
+    })
+      .populate("createdBy", "name")
+      .populate("approvedBy", "name");
+
+    // =====================================
+    // TIMELINE ARRAY
+    // =====================================
+
+    let timeline = [];
+
+    // =====================================
+    // LEAD EVENTS
+    // =====================================
+
+    if (lead) {
+      timeline.push({
+        type: "lead_created",
+        title: "Lead Created",
+        description: `${lead.name} lead added`,
+        by: null,
+        date: lead.createdAt,
+      });
+
+      if (lead.assignedAt) {
+        timeline.push({
+          type: "lead_assigned",
+          title: "Lead Assigned",
+          description: `Assigned to ${lead.agent?.name}`,
+          by: lead.assignedBy?.name,
+          date: lead.assignedAt,
+        });
+      }
+
+      if (lead.isAccepted) {
+        timeline.push({
+          type: "lead_accepted",
+          title: "Lead Accepted",
+          description: `${lead.agent?.name} accepted lead`,
+          by: lead.agent?.name,
+          date: lead.updatedAt,
+        });
+      }
+
+      if (lead.status === "rejected") {
+        timeline.push({
+          type: "lead_rejected",
+          title: "Lead Rejected",
+          description: "Lead rejected",
+          by: lead.rejectedBy?.name,
+          date: lead.updatedAt,
+        });
+      }
+    }
+
+    // =====================================
+    // SITE VISIT EVENTS
+    // =====================================
+
+    if (siteVisit) {
+      timeline.push({
+        type: "sitevisit_requested",
+        title: "Site Visit Requested",
+        description: `Visit scheduled for ${siteVisit.visitDate}`,
+        by: siteVisit.createdBy?.name,
+        date: siteVisit.createdAt,
+      });
+
+      if (siteVisit.status === "scheduled") {
+        timeline.push({
+          type: "sitevisit_approved",
+          title: "Site Visit Approved",
+          description: "Site visit approved",
+          by: null,
+          date: siteVisit.updatedAt,
+        });
+      }
+
+      if (siteVisit.status === "completed") {
+        timeline.push({
+          type: "sitevisit_completed",
+          title: "Site Visit Completed",
+          description: "Customer visited site",
+          by: null,
+          date: siteVisit.updatedAt,
+        });
+      }
+    }
+
+    // =====================================
+    // BOOKING EVENTS
+    // =====================================
+
+    timeline.push({
+      type: "booking_requested",
+      title: "Booking Requested",
+      description: `Booking created for plot`,
+      by: booking.createdBy?.name,
+      date: booking.createdAt,
+    });
+
+    if (booking.status === "pending") {
+      timeline.push({
+        type: "booking_approved",
+        title: "Booking Approved",
+        description: "Booking approved by admin",
+        by: null,
+        date: booking.updatedAt,
+      });
+    }
+
+    if (booking.status === "confirmed") {
+      timeline.push({
+        type: "booking_confirmed",
+        title: "Booking Confirmed",
+        description: "Booking fully confirmed",
+        by: null,
+        date: booking.updatedAt,
+      });
+    }
+
+    // =====================================
+    // PAYMENT EVENTS
+    // =====================================
+
+    payments.forEach((payment) => {
+      timeline.push({
+        type: "payment_added",
+        title: `${payment.paymentType.toUpperCase()} Payment Added`,
+        description: `₹${payment.amount} added via ${payment.paymentMode}`,
+        by: payment.createdBy?.name,
+        date: payment.createdAt,
+      });
+
+      if (payment.status === "approved") {
+        timeline.push({
+          type: "payment_approved",
+          title: `${payment.paymentType.toUpperCase()} Payment Approved`,
+          description: `₹${payment.amount} approved`,
+          by: payment.approvedBy?.name,
+          date: payment.updatedAt,
+        });
+      }
+
+      if (payment.status === "rejected") {
+        timeline.push({
+          type: "payment_rejected",
+          title: `${payment.paymentType.toUpperCase()} Payment Rejected`,
+          description: `₹${payment.amount} rejected`,
+          by: payment.approvedBy?.name,
+          date: payment.updatedAt,
+        });
+      }
+    });
+
+    // =====================================
+    // NOTES
+    // =====================================
+
+    booking.notes.forEach((note) => {
+      timeline.push({
+        type: "booking_note",
+        title: "Booking Note Added",
+        description: note.text,
+        by: note.by?.name,
+        date: note.date,
+      });
+    });
+
+    // =====================================
+    // SORT TIMELINE
+    // =====================================
+
+    timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    res.json(timeline);
+  } catch (error) {
+    console.log(error);
     res.status(500).send("Server Error");
   }
 });
