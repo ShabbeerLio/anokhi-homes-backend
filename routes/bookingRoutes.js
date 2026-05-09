@@ -631,7 +631,44 @@ router.get("/timeline/:bookingId", fetchuser, async (req, res) => {
     // SORT TIMELINE
     // =====================================
 
-    timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const orderMap = {
+      // LEAD
+      lead_created: 1,
+      lead_assigned: 2,
+      lead_accepted: 3,
+      lead_rejected: 4,
+
+      // SITE VISIT
+      sitevisit_requested: 5,
+      sitevisit_approved: 6,
+      sitevisit_rescheduled: 7,
+      sitevisit_completed: 8,
+      sitevisit_rejected: 9,
+
+      // BOOKING
+      booking_requested: 10,
+      booking_approved: 11,
+      booking_rejected: 12,
+      
+      // PAYMENTS
+      payment_added: 13,
+      payment_approved: 14,
+      payment_rejected: 15,
+      booking_confirmed: 16,
+    };
+
+    timeline.sort((a, b) => {
+      const orderA = orderMap[a.type] || 999;
+      const orderB = orderMap[b.type] || 999;
+
+      // ✅ first sort by module flow
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      // ✅ then sort by date inside same type
+      return new Date(a.date) - new Date(b.date);
+    });
 
     res.json(timeline);
   } catch (error) {
