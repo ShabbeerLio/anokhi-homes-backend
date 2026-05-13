@@ -111,7 +111,7 @@ router.post("/add", fetchuser, async (req, res) => {
     }
 
     // 🔥 CHECK AVAILABILITY
-    if (plotData.status !== "available") {
+    if (plotData.plotType !== "FOR_SALE") {
       return res.status(400).json({
         message: "Plot is not available",
       });
@@ -192,7 +192,7 @@ router.post("/add", fetchuser, async (req, res) => {
     const booking = await Booking.create(data);
 
     // 🔥 MARK PLOT BOOKED
-    plotData.status = "booked";
+    plotData.plotType = "PENDING";
     await colonyData.save();
 
     // 🔥 UPDATE SITE VISIT
@@ -253,7 +253,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         (p) => p.plotId === bookingData.plotId,
       );
 
-      if (plot) plot.status = "available";
+     if (plot) plot.plotType = "FOR_SALE";
 
       await colonyData.save();
     }

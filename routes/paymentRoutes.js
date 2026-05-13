@@ -37,7 +37,7 @@ router.get("/", fetchuser, async (req, res) => {
         ],
       });
 
-      // console.log(payments,"pymt")
+    // console.log(payments,"pymt")
     const populatePlotData = async (payment) => {
       if (!payment.booking) return payment;
 
@@ -62,7 +62,7 @@ router.get("/", fetchuser, async (req, res) => {
     res.json(paymentsWithPlot);
   } catch (error) {
     res.status(500).send("Server Error");
-    console.log(error,"error")
+    console.log(error, "error");
   }
 });
 
@@ -249,8 +249,20 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       }
 
       // ✅ 3. AUTO COMPLETE BOOKING (optional but powerful)
-      if (booking.amountPaid >= booking.totalAmount) {
+      if (booking.amountPaid >= booking.finalAmount) {
         booking.status = "confirmed";
+
+        const colony = await Colony.findById(booking.colony);
+
+        if (colony) {
+          const plot = colony.layout.plots.find(
+            (p) => p._id.toString() === booking.plot.toString(),
+          );
+          if (plot) {
+            plot.plotType = "SOLD";
+          }
+          await colony.save();
+        }
       }
 
       await booking.save();
