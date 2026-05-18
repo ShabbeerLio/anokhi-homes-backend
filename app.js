@@ -24,9 +24,7 @@ app.use("/api/lead", require("./routes/leadRoutes"));
 app.use("/api/sitevisit", require("./routes/sitevisitRoutes"));
 app.use("/api/booking", require("./routes/bookingRoutes"));
 app.use("/api/payment", require("./routes/paymentRoutes"));
-app.use("/api/homepage", require("./routes/homePageRoutes"));
-app.use("/api/policy", require("./routes/policyRoutes"));
-app.use("/api/meta", require("./routes/metaDataRoutes"));
+app.use("/api/landing", require("./routes/landingRoutes"));
 
 app.get("/", (req, res) => {
   res.json({ message: "Hello MERN Stack! " });
