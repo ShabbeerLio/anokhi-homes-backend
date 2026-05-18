@@ -474,9 +474,7 @@ router.delete("/footer/socialmedia/:id", async (req, res) => {
 router.delete("/policies/:type/:sectionId", async (req, res) => {
   try {
     const { type, sectionId } = req.params;
-
     const data = await LandingPage.findOne();
-
     if (!data.policies[type]) {
       return res.status(404).json({
         message: "Policy type not found",
@@ -486,9 +484,7 @@ router.delete("/policies/:type/:sectionId", async (req, res) => {
     data.policies[type].sections = data.policies[type].sections.filter(
       (item) => item._id.toString() !== sectionId,
     );
-
     await data.save();
-
     res.json({
       message: "Policy section deleted successfully",
       sections: data.policies[type].sections,
@@ -514,7 +510,6 @@ router.post(
       });
     } catch (error) {
       console.log(error);
-
       res.status(500).send("Server Error");
     }
   },
