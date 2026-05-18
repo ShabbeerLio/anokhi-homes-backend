@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const LandingPage = require("../models/LandingPage");
+const { uploadImage, uploadPdf } = require("../middleware/cloudinaryUpload");
 
 /* =================================
    GET LANDING PAGE
@@ -33,7 +34,7 @@ router.put("/update", async (req, res) => {
       data = await LandingPage.create(req.body);
     } else {
       data = await LandingPage.findByIdAndUpdate(data._id, req.body, {
-        new: true,
+        returnDocument: "after",
       });
     }
 
@@ -58,7 +59,7 @@ router.put("/home", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -84,7 +85,7 @@ router.put("/about", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -110,7 +111,7 @@ router.put("/gallery", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -136,7 +137,7 @@ router.put("/documents", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -147,6 +148,28 @@ router.put("/documents", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+/* =================================
+   UPLOAD PDF
+================================= */
+
+router.post(
+  "/upload/pdf",
+  uploadPdf.single("file"),
+
+  async (req, res) => {
+    try {
+      res.json({
+        file: req.file.path,
+        fileName: req.file.originalname,
+        public_id: req.file.filename,
+      });
+    } catch (error) {
+      console.log(error);
+
+      res.status(500).send("Server Error");
+    }
+  },
+);
 
 /* =================================
    UPDATE CONTACT
@@ -162,7 +185,7 @@ router.put("/contact", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -188,7 +211,7 @@ router.put("/footer", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -214,7 +237,7 @@ router.put("/meta", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -240,7 +263,7 @@ router.put("/policies", async (req, res) => {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
       },
     );
@@ -475,5 +498,26 @@ router.delete("/policies/:type/:sectionId", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+
+/* =================================
+   UPLOAD IMAGE
+================================= */
+
+router.post(
+  "/upload/image",
+  uploadImage.single("image"),
+
+  async (req, res) => {
+    try {
+      res.json({
+        url: req.file.path,
+      });
+    } catch (error) {
+      console.log(error);
+
+      res.status(500).send("Server Error");
+    }
+  },
+);
 
 module.exports = router;
