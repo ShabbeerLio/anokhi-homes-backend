@@ -14,40 +14,169 @@ router.post("/create-user", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
 
-    // Only admin can create accounts
     if (loggedUser.role !== "admin") {
       return res.status(403).json({
         msg: "Only admin can create users",
       });
     }
 
-    const { name, email, phone, password, role } = req.body;
-    console.log(name, email, phone, password, role);
+    const {
+      name,
+      email,
+      phone,
+      password,
+      role,
 
-    // check if user exists
-    let user = await User.findOne({ email });
+      // MLM
+      referralId,
+      position,
 
-    if (user) {
-      return res.status(400).json({ msg: "User already exists" });
+      // EXTRA
+      address,
+      panNumber,
+      panPhoto,
+      aadharNumber,
+      aadharPhoto,
+
+      bankName,
+      accountNumber,
+      ifsc,
+
+      nomineeName,
+      nomineeRelation,
+      nomineeAadharNumber,
+      nomineeAadharPhoto,
+    } = req.body;
+
+    let existingUser = await User.findOne({
+      email,
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        msg: "User already exists",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    user = await User.create({
+    const user = new User({
       name,
       email,
       phone,
       password: hashedPassword,
       role,
+      status: role === "user" ? "active" : "inactive",
+      createdBy: loggedUser._id,
+
+      address,
+
+      panNumber,
+      panPhoto,
+
+      aadharNumber,
+      aadharPhoto,
+
+      bankName,
+      accountNumber,
+      ifsc,
+
+      nomineeName,
+      nomineeRelation,
+      nomineeAadharNumber,
+      nomineeAadharPhoto,
+
+      designation: role === "admin" ? "Executive Director" : "Sales Executive",
     });
+
+    if (role === "agent") {
+      // referralId required for agent
+      if (!referralId) {
+        return res.status(400).json({
+          msg: "Referral ID is required",
+        });
+      }
+
+      // position required
+      if (position !== "left" && position !== "right") {
+        return res.status(400).json({
+          msg: "Position must be left or right",
+        });
+      }
+
+      // find parent
+      const parentUser = await User.findOne({
+        referralId,
+      });
+
+      if (!parentUser) {
+        return res.status(400).json({
+          msg: "Invalid referral ID",
+        });
+      }
+
+      // assign hierarchy
+      user.parent = parentUser._id;
+      user.referredBy = parentUser._id;
+      user.position = position;
+      user.level = (parentUser.level || 0) + 1;
+
+      // max 16 level
+      if (user.level > 16) {
+        return res.status(400).json({
+          msg: "Maximum level reached",
+        });
+      }
+    }
+
+    await user.save();
+
+    if (role === "agent") {
+      const parentUser = await User.findById(user.parent);
+
+      if (user.position === "left") {
+        parentUser.leftChildren.push(user._id);
+      }
+
+      if (user.position === "right") {
+        parentUser.rightChildren.push(user._id);
+      }
+      parentUser.directTeam += 1;
+      parentUser.totalTeam += 1;
+      await parentUser.save();
+    }
+
+    const finalUser = await User.findById(user._id).select("-password");
 
     res.json({
       msg: "User created successfully",
-      user,
+      user: finalUser,
     });
   } catch (error) {
-    console.error(error.message);
+    console.error(error);
+
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+router.get("/referral/:referralId", async (req, res) => {
+  try {
+    const user = await User.findOne({
+      referralId: req.params.referralId,
+      role: {
+        $in: ["admin", "agent"],
+      },
+    }).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        msg: "Agent not found",
+      });
+    }
+
+    res.json(user);
+  } catch (error) {
     console.log(error);
+
     res.status(500).send("Internal Server Error");
   }
 });
@@ -56,12 +185,20 @@ router.post("/create-user", fetchuser, async (req, res) => {
 router.post("/getuser", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
-
-    const user = await User.findById(userId).select("-password");
+    const user = await User.findById(userId)
+      .select("-password")
+      .populate("referredBy", "name phone email referralId designation")
+      .populate("parent", "name phone email referralId designation")
+      .populate("leftChildren", "name phone email referralId designation level")
+      .populate(
+        "rightChildren",
+        "name phone email referralId designation level",
+      );
 
     res.send(user);
   } catch (error) {
     console.error(error.message);
+
     res.status(500).send("Internal server Error");
   }
 });
@@ -164,14 +301,12 @@ router.put("/status/:id", fetchuser, async (req, res) => {
 });
 
 router.put("/roles/permissions/:roleName", fetchuser, async (req, res) => {
-
   try {
-
     const admin = await User.findById(req.user.id);
 
     if (admin.role !== "admin") {
       return res.status(403).json({
-        msg: "Only admin allowed"
+        msg: "Only admin allowed",
       });
     }
 
@@ -180,18 +315,16 @@ router.put("/roles/permissions/:roleName", fetchuser, async (req, res) => {
     const role = await StaffRole.findOneAndUpdate(
       { roleName: req.params.roleName },
       { permissions },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
     res.json({
       msg: "Permissions updated successfully",
-      role
+      role,
     });
-
   } catch (error) {
     res.status(500).send("Server error");
   }
-
 });
 
 module.exports = router;

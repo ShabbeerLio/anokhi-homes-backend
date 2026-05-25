@@ -3,11 +3,14 @@ const mongoose = require("mongoose");
 const userSchema = new mongoose.Schema(
   {
     name: String,
+
     email: {
       type: String,
       unique: true,
     },
+
     phone: String,
+
     password: String,
 
     role: {
@@ -21,10 +24,25 @@ const userSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["active", "inactive"],
-      default: "active",
+      default: "inactive",
     },
 
     address: String,
+
+    panNumber: String,
+    panPhoto: String,
+
+    aadharNumber: String,
+    aadharPhoto: String,
+
+    bankName: String,
+    accountNumber: String,
+    ifsc: String,
+
+    nomineeName: String,
+    nomineeRelation: String,
+    nomineeAadharNumber: String,
+    nomineeAadharPhoto: String,
 
     staffRole: {
       type: String,
@@ -46,8 +64,165 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
+    /* =================================
+       MLM SYSTEM
+    ================================= */
+
+    referralId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    parent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    position: {
+      type: String,
+      enum: ["left", "right"],
+    },
+
+    leftChildren: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    rightChildren: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    level: {
+      type: Number,
+      default: 1,
+      max: 16,
+    },
+
+    /* =================================
+       BUSINESS
+    ================================= */
+
+    selfBusiness: {
+      type: Number,
+      default: 0,
+    },
+
+    leftBusiness: {
+      type: Number,
+      default: 0,
+    },
+
+    rightBusiness: {
+      type: Number,
+      default: 0,
+    },
+
+    totalBusiness: {
+      type: Number,
+      default: 0,
+    },
+
+    /* =================================
+       DESIGNATION
+    ================================= */
+
+    designation: {
+      type: String,
+      default: "Sales Executive",
+    },
+
+    directIncomePercent: {
+      type: Number,
+      default: 5,
+    },
+
+    /* =================================
+       WALLET
+    ================================= */
+
+    wallet: {
+      type: Number,
+      default: 0,
+    },
+
+    totalIncome: {
+      type: Number,
+      default: 0,
+    },
+
+    totalWithdraw: {
+      type: Number,
+      default: 0,
+    },
+
+    /* =================================
+       TEAM
+    ================================= */
+
+    totalTeam: {
+      type: Number,
+      default: 0,
+    },
+
+    directTeam: {
+      type: Number,
+      default: 0,
+    },
+
+    activeTeam: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );
+
+/* =================================
+
+   GENERATE REFERRAL ID
+
+================================= */
+
+userSchema.pre("save", async function () {
+  // Only admin and agent get referralId
+
+  if ((this.role === "admin" || this.role === "agent") && !this.referralId) {
+    let isUnique = false;
+
+    while (!isUnique) {
+      const random = Math.floor(100000 + Math.random() * 900000);
+
+      const referralCode = `PAH${random}`;
+
+      const existingUser = await mongoose
+
+        .model("User")
+
+        .findOne({
+          referralId: referralCode,
+        });
+
+      if (!existingUser) {
+        this.referralId = referralCode;
+
+        isUnique = true;
+      }
+    }
+  }
+});
 
 module.exports = mongoose.model("User", userSchema);
