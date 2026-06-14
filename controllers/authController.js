@@ -53,7 +53,7 @@ const register = async (req, res) => {
       phone,
       password: hashed,
       role,
-      status: role === "user" ? "active" : "inactive",
+      status: role === "user" ? "active" : "approval",
       address,
 
       panNumber,
@@ -71,7 +71,14 @@ const register = async (req, res) => {
       nomineeAadharNumber,
       nomineeAadharPhoto,
 
-      designation: role === "admin" ? "Executive Director" : "Sales Executive",
+      designation:
+        role === "admin"
+          ? "Executive Director"
+          : role === "agent"
+            ? "Sales Executive"
+            : "",
+      level: role === "admin" ? 16 : 1,
+      directIncomePercent: role === "admin" ? 20 : 5,
     });
 
     if (role === "agent") {
@@ -103,7 +110,7 @@ const register = async (req, res) => {
       user.parent = parentUser._id;
       user.referredBy = parentUser._id;
       user.position = position;
-      user.level = (parentUser.level || 0) + 1;
+      user.level = 1;
 
       // max 16 levels
       if (user.level > 16) {
@@ -165,9 +172,15 @@ const login = async (req, res) => {
       });
     }
 
+    if (user.status === "approval") {
+      return res.status(403).json({
+        msg: "Your account is under approval",
+      });
+    }
+
     if (user.status === "inactive") {
       return res.status(403).json({
-        msg: "Account inactive by admin. Please contact administrator.",
+        msg: "Account inactive by admin. Please contact admin.",
       });
     }
 

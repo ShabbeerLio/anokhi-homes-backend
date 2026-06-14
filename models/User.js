@@ -23,8 +23,8 @@ const userSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["active", "inactive"],
-      default: "inactive",
+      enum: ["approval", "active", "inactive"],
+      default: "approval",
     },
 
     address: String,
@@ -115,6 +115,10 @@ const userSchema = new mongoose.Schema(
     /* =================================
        BUSINESS
     ================================= */
+    directIncomeBusinessProcessed: {
+      type: Number,
+      default: 0,
+    },
 
     selfBusiness: {
       type: Number,
@@ -134,6 +138,16 @@ const userSchema = new mongoose.Schema(
     totalBusiness: {
       type: Number,
       default: 0,
+    },
+
+    rewardBusinessAchieved: {
+      type: Number,
+      default: 0,
+    },
+
+    claimedRewardLevels: {
+      type: [Number],
+      default: [],
     },
 
     /* =================================
@@ -165,6 +179,16 @@ const userSchema = new mongoose.Schema(
     },
 
     totalWithdraw: {
+      type: Number,
+      default: 0,
+    },
+
+    cycle1Business: {
+      type: Number,
+      default: 0,
+    },
+
+    cycle2Business: {
       type: Number,
       default: 0,
     },

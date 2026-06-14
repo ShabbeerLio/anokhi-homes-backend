@@ -2,39 +2,44 @@ const rankSlabs = require("../utils/rankSlabs");
 const User = require("../models/User");
 
 const updateRank = async (userId) => {
+  try {
+    const user = await User.findById(userId);
 
-  const user = await User.findById(userId);
+    if (!user) return;
 
-  if (!user) return;
+    const totalBusiness =
+      Number(user.selfBusiness || 0) +
+      Number(user.leftBusiness || 0) +
+      Number(user.rightBusiness || 0);
 
-  // TOTAL BUSINESS
-  const totalBusiness =
-    user.selfBusiness +
-    user.leftBusiness +
-    user.rightBusiness;
+    const rank = [...rankSlabs]
+      .sort((a, b) => b.min - a.min)
+      .find((r) => totalBusiness >= r.min);
 
-  // FIND MATCHING RANK
-  const rank = rankSlabs.find(
-    (r) =>
-      totalBusiness >= r.min &&
-      totalBusiness < r.max
-  );
+    if (!rank) return;
 
-  if (!rank) return;
+    const changed =
+      user.level !== rank.level ||
+      user.designation !== rank.designation ||
+      user.directIncomePercent !== rank.directIncome;
 
-  // UPDATE USER
-  user.level = rank.level;
+    user.totalBusiness = totalBusiness;
 
-  user.designation =
-    rank.designation;
+    if (changed) {
+      user.level = rank.level;
+      user.designation = rank.designation;
+      user.directIncomePercent =
+        rank.directIncome;
 
-  user.directIncomePercent =
-    rank.directIncome;
+      console.log(
+        `${user.name} promoted to ${rank.designation}`
+      );
+    }
 
-  user.totalBusiness =
-    totalBusiness;
-
-  await user.save();
+    await user.save();
+  } catch (error) {
+    console.log(error);
+  }
 };
 
 module.exports = updateRank;

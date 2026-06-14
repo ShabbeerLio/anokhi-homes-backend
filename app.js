@@ -1,7 +1,13 @@
 require("dotenv").config();
+const cron = require("node-cron");
 const connectToMongo = require("./db");
 connectToMongo();
-require("./utils/checker");
+// require("./utils/checker");
+// require("./utils/payoutCycle");
+// require("./utils/matchingIncomeCycle");
+// require("./utils/royaltyCycle");
+require("./utils/royaltydistribution");
+
 const express = require("express");
 const cors = require("cors");
 
@@ -25,6 +31,11 @@ app.use("/api/sitevisit", require("./routes/sitevisitRoutes"));
 app.use("/api/booking", require("./routes/bookingRoutes"));
 app.use("/api/payment", require("./routes/paymentRoutes"));
 app.use("/api/landing", require("./routes/landingRoutes"));
+app.use("/api/wallet", require("./routes/mlmRoutes"));
+app.use("/api/rewards", require("./routes/rewardSlabRoutes"));
+app.use("/api/offer", require("./routes/offerRoute"));
+app.use("/api/discount", require("./routes/discountRoute"));
+app.use("/api/cashback", require("./routes/cashbackRoutes"));
 
 app.get("/", (req, res) => {
   res.json({ message: "Hello MERN Stack! " });

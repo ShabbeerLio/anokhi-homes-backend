@@ -6,6 +6,13 @@ const User = require("../models/User");
 const Booking = require("../models/Booking");
 const fetchuser = require("../middleware/fetchUser");
 const Colony = require("../models/Colony");
+const distributeDirectIncome = require("../mlmController/distributeDirectIncome");
+const updateBusinessTree = require("../mlmController/updateBusinessTree");
+const distributeDifferenceIncome = require("../mlmController/distributeDifferenceIncome");
+const WalletTransaction = require("../models/WalletTransaction");
+const distributeMatchingIncome = require("../mlmController/distributeMatchingIncome");
+const Withdrawal = require("../models/Withdrawal");
+const checkRewards = require("../mlmController/checkRewards");
 
 // =========================
 // GET ALL PAYMENTS
@@ -143,15 +150,46 @@ router.post("/add", fetchuser, async (req, res) => {
       }
 
       // ✅ 3. AUTO CONFIRM BOOKING
-      if (
-        bookingDoc.paymentSchedule.booking.paid &&
-        bookingDoc.paymentSchedule.agreement.paid &&
-        bookingDoc.paymentSchedule.full.paid
-      ) {
+      if (bookingDoc.amountPaid >= bookingDoc.finalAmount) {
         bookingDoc.status = "confirmed";
+
+        const colony = await Colony.findById(bookingDoc.colony);
+
+        if (colony) {
+          const plot = colony.layout.plots.find(
+            (p) => p._id.toString() === bookingDoc.plot.toString(),
+          );
+
+          if (plot) {
+            plot.plotType = "SOLD";
+          }
+
+          await colony.save();
+        }
       }
 
       await bookingDoc.save();
+      if (!payment.mlmProcessed && bookingData.agent) {
+        await updateBusinessTree(bookingData.agent, payment.amount);
+
+        await distributeDirectIncome(
+          bookingData.agent,
+          payment.amount,
+          payment._id,
+        );
+
+        await distributeDifferenceIncome(
+          bookingData.agent,
+          payment.amount,
+          payment._id,
+        );
+
+        await distributeMatchingIncome(bookingData.agent);
+        await checkRewards(bookingData.agent);
+
+        payment.mlmProcessed = true;
+        await payment.save();
+      }
     }
 
     res.json(payment);
@@ -233,22 +271,51 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
+    if (payment.status === "approved") {
+      return res.status(400).json({
+        message: "Payment already approved",
+      });
+    }
+
     if (action === "approve") {
       payment.status = "approved";
       payment.approvedBy = user._id;
 
-      // ✅ 1. UPDATE TOTAL PAID AMOUNT
+      // ==========================
+      // BOOKING UPDATE
+      // ==========================
+
       booking.amountPaid += payment.amount;
 
-      // ✅ 2. MARK INSTALLMENT AS PAID
       const schedule = booking.paymentSchedule[payment.paymentType];
 
       if (schedule) {
-        schedule.paid = true;
-        schedule.date = new Date();
+        const totalPaidForType = await Payment.aggregate([
+          {
+            $match: {
+              booking: booking._id,
+              paymentType: payment.paymentType,
+              status: "approved",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: {
+                $sum: "$amount",
+              },
+            },
+          },
+        ]);
+
+        const paidAmount = (totalPaidForType[0]?.total || 0) + payment.amount;
+
+        if (paidAmount >= schedule.amount) {
+          schedule.paid = true;
+          schedule.date = new Date();
+        }
       }
 
-      // ✅ 3. AUTO COMPLETE BOOKING (optional but powerful)
       if (booking.amountPaid >= booking.finalAmount) {
         booking.status = "confirmed";
 
@@ -258,14 +325,37 @@ router.put("/action/:id", fetchuser, async (req, res) => {
           const plot = colony.layout.plots.find(
             (p) => p._id.toString() === booking.plot.toString(),
           );
+
           if (plot) {
             plot.plotType = "SOLD";
           }
+
           await colony.save();
         }
       }
 
       await booking.save();
+
+      if (!payment.mlmProcessed && booking.agent) {
+        await updateBusinessTree(booking.agent, payment.amount);
+
+        await distributeDirectIncome(
+          booking.agent,
+          payment.amount,
+          payment._id,
+        );
+
+        await distributeDifferenceIncome(
+          booking.agent,
+          payment.amount,
+          payment._id,
+        );
+
+        await distributeMatchingIncome(booking.agent);
+        await checkRewards(booking.agent);
+
+        payment.mlmProcessed = true;
+      }
     } else if (action === "reject") {
       payment.status = "rejected";
     } else {
@@ -281,6 +371,49 @@ router.put("/action/:id", fetchuser, async (req, res) => {
     console.log(error);
     res.status(500).send("Server Error");
   }
+});
+
+router.post("/withdraw/request", fetchuser, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  const { amount } = req.body;
+
+  if (amount > user.wallet) {
+    return res.status(400).json({
+      msg: "Insufficient wallet",
+    });
+  }
+
+  const request = await Withdrawal.create({
+    user: user._id,
+    amount,
+  });
+
+  res.json(request);
+});
+
+router.put("/withdraw/approve/:id", fetchuser, async (req, res) => {
+  const admin = await User.findById(req.user.id);
+  if (admin.role !== "admin") {
+    return res.status(403).json({
+      msg: "Admin only",
+    });
+  }
+  const request = await Withdrawal.findById(req.params.id);
+  const user = await User.findById(request.user);
+  user.wallet -= request.amount;
+  user.totalWithdraw += request.amount;
+  await WalletTransaction.create({
+    user: user._id,
+    amount,
+    type: "debit",
+    source: "withdrawal",
+    remark: "Withdrawal Approved",
+  });
+  await user.save();
+  request.status = "approved";
+  request.approvedBy = admin._id;
+  await request.save();
+  res.json(request);
 });
 
 router.delete("/delete/:id", fetchuser, async (req, res) => {

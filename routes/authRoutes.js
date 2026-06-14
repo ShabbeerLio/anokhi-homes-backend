@@ -6,6 +6,9 @@ const { login, register } = require("../controllers/authController");
 const fetchuser = require("../middleware/fetchUser");
 const User = require("../models/User");
 const StaffRole = require("../models/StaffRole");
+const distributeLevelIncome = require("../mlmController/distributeLevelIncome");
+const IncomeHistory = require("../models/IncomeHistory");
+const getTeamTree = require("../utils/getTeamTree");
 
 /* AUTH */
 router.post("/login", login);
@@ -65,7 +68,7 @@ router.post("/create-user", fetchuser, async (req, res) => {
       phone,
       password: hashedPassword,
       role,
-      status: role === "user" ? "active" : "inactive",
+      status: role === "user" ? "active" : "approval",
       createdBy: loggedUser._id,
 
       address,
@@ -86,6 +89,8 @@ router.post("/create-user", fetchuser, async (req, res) => {
       nomineeAadharPhoto,
 
       designation: role === "admin" ? "Executive Director" : "Sales Executive",
+      level: role === "admin" ? 16 : 1,
+      directIncomePercent: role === "admin" ? 20 : 5,
     });
 
     if (role === "agent") {
@@ -118,7 +123,7 @@ router.post("/create-user", fetchuser, async (req, res) => {
       user.parent = parentUser._id;
       user.referredBy = parentUser._id;
       user.position = position;
-      user.level = (parentUser.level || 0) + 1;
+      user.level = 1;
 
       // max 16 level
       if (user.level > 16) {
@@ -181,18 +186,125 @@ router.get("/referral/:referralId", async (req, res) => {
   }
 });
 
+router.put("/approval/:id", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+
+    if (loggedUser.role !== "admin") {
+      return res.status(403).json({
+        msg: "Only admin can approve users",
+      });
+    }
+
+    const { status } = req.body;
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    // PREVIOUS STATUS
+    const oldStatus = user.status;
+
+    // UPDATE STATUS
+    user.status = status;
+
+    await user.save();
+
+    // ONLY WHEN AGENT BECOMES ACTIVE
+    if (
+      oldStatus !== "active" &&
+      status === "active" &&
+      user.role === "agent"
+    ) {
+      await distributeLevelIncome(user._id);
+    }
+
+    res.json({
+      msg: "Status updated successfully",
+      user,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).send("Internal server error");
+  }
+});
+
+router.put("/status/:id", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+
+    // ONLY ADMIN OR STAFF
+    if (loggedUser.role !== "admin" && loggedUser.role !== "staff") {
+      return res.status(403).json({
+        msg: "Only admin or staff can change status",
+      });
+    }
+
+    const { status } = req.body;
+
+    // ALLOW ONLY active / inactive
+    if (status !== "active" && status !== "inactive") {
+      return res.status(400).json({
+        msg: "Status must be active or inactive",
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    // DO NOT ALLOW approval HERE
+    if (user.status === "approval") {
+      return res.status(400).json({
+        msg: "User is pending approval. Use approval route first.",
+      });
+    }
+
+    user.status = status;
+
+    await user.save();
+
+    res.json({
+      msg: `User ${status} successfully`,
+      user,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).send("Internal server error");
+  }
+});
+
 /* GET LOGGED IN USER */
 router.post("/getuser", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
     const user = await User.findById(userId)
       .select("-password")
-      .populate("referredBy", "name phone email referralId designation")
-      .populate("parent", "name phone email referralId designation")
-      .populate("leftChildren", "name phone email referralId designation level")
+      .populate(
+        "referredBy",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate(
+        "parent",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate(
+        "leftChildren",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
       .populate(
         "rightChildren",
-        "name phone email referralId designation level",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
       );
 
     res.send(user);
@@ -209,10 +321,14 @@ router.post("/getuser", fetchuser, async (req, res) => {
 
 router.get("/all-users", fetchuser, async (req, res) => {
   try {
-    const users = await User.find().select("-password");
+    const users = await User.find()
+      .select("-password")
+      .populate("referredBy", "name phone email referralId designation")
+      .populate("parent", "name phone email referralId designation");
 
     res.json(users);
   } catch (error) {
+    console.log(error);
     res.status(500).send("Internal server error");
   }
 });
@@ -250,12 +366,21 @@ router.put("/update/:id", fetchuser, async (req, res) => {
       });
     }
 
-    const { name, phone, role, status } = req.body;
+    const updateFields = {};
+
+    Object.keys(req.body).forEach((key) => {
+      if (req.body[key] !== undefined) {
+        updateFields[key] = req.body[key];
+      }
+    });
 
     const updatedUser = await User.findByIdAndUpdate(
       targetUserId,
-      { name, phone, role, status },
-      { new: true },
+      updateFields,
+      {
+        new: true,
+        runValidators: true,
+      },
     ).select("-password");
 
     res.json(updatedUser);
@@ -324,6 +449,81 @@ router.put("/roles/permissions/:roleName", fetchuser, async (req, res) => {
     });
   } catch (error) {
     res.status(500).send("Server error");
+  }
+});
+
+router.get("/income-history", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+
+    let query = {};
+
+    // ADMIN CAN SEE ALL
+    if (loggedUser.role !== "admin") {
+      query.user = req.user.id;
+    }
+
+    const histories = await IncomeHistory.find(query)
+      .populate("user", "name email phone referralId designation")
+      .populate("fromUser", "name email phone referralId designation")
+      .populate({
+        path: "payment",
+        select: "customer approvedBy paymentDate amount paymentType",
+        populate: [
+          {
+            path: "customer",
+            select: "name phone email",
+          },
+          {
+            path: "approvedBy",
+            select: "name phone email",
+          },
+          { path: "paymentMode", select: "name" },
+          { path: "paymentType", select: "name" },
+          { path: "paymentDate", select: "name" },
+        ],
+      })
+      .sort({
+        createdAt: -1,
+      });
+
+    res.json(histories);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).send("Internal server error");
+  }
+});
+
+router.get("/team-tree/:referralId", fetchuser, async (req, res) => {
+  try {
+    const rootUser = await User.findOne({
+      referralId: req.params.referralId,
+    });
+
+    if (!rootUser) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    const tree = await getTeamTree(rootUser._id);
+
+    res.json(tree);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+router.get("/my-team-tree", fetchuser, async (req, res) => {
+  try {
+    const tree = await getTeamTree(req.user.id);
+
+    res.json(tree);
+  } catch (error) {
+    res.status(500).send("Internal Server Error");
   }
 });
 
