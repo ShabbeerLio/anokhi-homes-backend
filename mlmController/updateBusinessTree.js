@@ -16,9 +16,7 @@ const updateBusinessTree = async (agentId, amount) => {
     agent.selfBusiness += amount;
 
     agent.totalBusiness =
-      agent.selfBusiness +
-      agent.leftBusiness +
-      agent.rightBusiness;
+      agent.selfBusiness + agent.leftBusiness + agent.rightBusiness;
 
     await agent.save();
 
@@ -32,9 +30,10 @@ const updateBusinessTree = async (agentId, amount) => {
     let currentUser = agent;
 
     while (currentUser.parent) {
-      const parent = await User.findById(
-        currentUser.parent
-      );
+      const parent = await User.findById(currentUser.parent);
+      console.log("CHILD:", currentUser.name);
+      console.log("POSITION:", currentUser.position);
+      console.log("AMOUNT:", amount);
 
       if (!parent) break;
 
@@ -45,9 +44,7 @@ const updateBusinessTree = async (agentId, amount) => {
       }
 
       parent.totalBusiness =
-        parent.selfBusiness +
-        parent.leftBusiness +
-        parent.rightBusiness;
+        parent.selfBusiness + parent.leftBusiness + parent.rightBusiness;
 
       await parent.save();
 

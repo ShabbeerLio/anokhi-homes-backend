@@ -150,6 +150,11 @@ const userSchema = new mongoose.Schema(
       default: [],
     },
 
+    matchedBusiness: {
+      type: Number,
+      default: 0,
+    },
+
     /* =================================
        DESIGNATION
     ================================= */

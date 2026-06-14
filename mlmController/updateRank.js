@@ -7,6 +7,23 @@ const updateRank = async (userId) => {
 
     if (!user) return;
 
+    // ADMIN NEVER CHANGES
+    if (user.role === "admin") {
+      if (
+        user.level !== 16 ||
+        user.designation !== "Executive Director" ||
+        user.directIncomePercent !== 20
+      ) {
+        user.level = 16;
+        user.designation = "Executive Director";
+        user.directIncomePercent = 20;
+
+        await user.save();
+      }
+
+      return;
+    }
+
     const totalBusiness =
       Number(user.selfBusiness || 0) +
       Number(user.leftBusiness || 0) +
@@ -28,12 +45,9 @@ const updateRank = async (userId) => {
     if (changed) {
       user.level = rank.level;
       user.designation = rank.designation;
-      user.directIncomePercent =
-        rank.directIncome;
+      user.directIncomePercent = rank.directIncome;
 
-      console.log(
-        `${user.name} promoted to ${rank.designation}`
-      );
+      console.log(`${user.name} promoted to ${rank.designation}`);
     }
 
     await user.save();

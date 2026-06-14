@@ -2,44 +2,45 @@ const User = require("../models/User");
 const IncomeHistory = require("../models/IncomeHistory");
 const checkRewards = require("./checkRewards");
 
-const distributeMatchingIncome = async (
-  userId
-) => {
+const distributeMatchingIncome = async (userId) => {
   try {
-    let currentUser =
-      await User.findById(userId);
+    let currentUser = await User.findById(userId);
 
     while (currentUser) {
       if (
         currentUser.role === "agent" &&
         currentUser.status === "active"
       ) {
-        const matchingBusiness =
-          Math.min(
-            currentUser.leftBusiness,
-            currentUser.rightBusiness
-          );
+        // Available business not already matched
+        const availableLeft =
+          currentUser.leftBusiness -
+          currentUser.matchedBusiness;
+
+        const availableRight =
+          currentUser.rightBusiness -
+          currentUser.matchedBusiness;
+
+        const matchingBusiness = Math.min(
+          availableLeft,
+          availableRight
+        );
 
         if (matchingBusiness > 0) {
           const matchingIncome =
-            (
-              matchingBusiness *
-              currentUser.directIncomePercent
-            ) / 100;
+            (matchingBusiness *
+              currentUser.directIncomePercent) /
+            100;
 
-          currentUser.wallet +=
-            matchingIncome;
+          // Credit income
+          currentUser.wallet += matchingIncome;
+          currentUser.totalIncome += matchingIncome;
 
-          currentUser.totalIncome +=
-            matchingIncome;
-
+          // Reward business tracking
           currentUser.rewardBusinessAchieved +=
             matchingBusiness;
 
-          currentUser.leftBusiness -=
-            matchingBusiness;
-
-          currentUser.rightBusiness -=
+          // Mark business as matched
+          currentUser.matchedBusiness +=
             matchingBusiness;
 
           await currentUser.save();
@@ -47,8 +48,7 @@ const distributeMatchingIncome = async (
           await IncomeHistory.create({
             user: currentUser._id,
             type: "matching_income",
-            businessAmount:
-              matchingBusiness,
+            businessAmount: matchingBusiness,
             percentage:
               currentUser.directIncomePercent,
             amount: matchingIncome,
@@ -56,23 +56,23 @@ const distributeMatchingIncome = async (
             creditedAt: new Date(),
           });
 
-          await checkRewards(
-            currentUser
+          await checkRewards(currentUser._id);
+
+          console.log(
+            `${currentUser.name} Matching Income ₹${matchingIncome}`
           );
         }
       }
 
       if (!currentUser.parent) break;
 
-      currentUser =
-        await User.findById(
-          currentUser.parent
-        );
+      currentUser = await User.findById(
+        currentUser.parent
+      );
     }
   } catch (error) {
     console.log(error);
   }
 };
 
-module.exports =
-  distributeMatchingIncome;
+module.exports = distributeMatchingIncome;
