@@ -6,7 +6,7 @@ const sectionSchema = new mongoose.Schema(
   {
     title: String,
     image: String,
-    
+    description: String,
   },
   { _id: true },
 );
