@@ -1,8 +1,7 @@
 const express = require("express");
 const router = express.Router();
-
 const HelpTicket = require("../models/HelpTicket");
-const fetchuser = require("../middleware/fetchuser");
+const fetchuser = require("../middleware/fetchUser");
 
 //
 // CREATE TICKET
