@@ -202,7 +202,7 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     });
 
     await visit.save();
-
+    await visit.populate("notes.by", "name role");
     res.json({
       message: "Note added successfully",
       visit,
@@ -243,6 +243,7 @@ router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
     noteItem.editedAt = new Date();
 
     await visit.save();
+    await visit.populate("notes.by", "name role");
 
     res.json({ message: "Note updated", visit });
   } catch (err) {
