@@ -188,7 +188,7 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     // Agent can only add note to their own lead
     if (
       loggedUser.role === "agent" &&
-      lead.agent?.toString() !== loggedUser._id.toString()
+      visit.agent?.toString() !== loggedUser._id.toString()
     ) {
       return res.status(403).json({
         message: "Not allowed to add note to this lead",
