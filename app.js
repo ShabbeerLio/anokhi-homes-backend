@@ -36,6 +36,7 @@ app.use("/api/rewards", require("./routes/rewardSlabRoutes"));
 app.use("/api/offer", require("./routes/offerRoute"));
 app.use("/api/discount", require("./routes/discountRoute"));
 app.use("/api/cashback", require("./routes/cashbackRoutes"));
+app.use("/api/help", require("./routes/helpTicketRoutes"));
 
 app.get("/", (req, res) => {
   res.json({ message: "Hello MERN Stack! " });
