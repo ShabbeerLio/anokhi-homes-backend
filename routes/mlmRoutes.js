@@ -12,6 +12,27 @@ const rankSlabs = require("../utils/rankSlabs");
    WALLET HISTORY
 ================================= */
 
+async function getDownlineIds(userId) {
+  const ids = [];
+
+  async function traverse(id) {
+    const user = await User.findById(id).select("leftChildren rightChildren");
+
+    if (!user) return;
+
+    const children = [...user.leftChildren, ...user.rightChildren];
+
+    for (const childId of children) {
+      ids.push(childId);
+      await traverse(childId);
+    }
+  }
+
+  await traverse(userId);
+
+  return ids;
+}
+
 router.get("/history", fetchuser, async (req, res) => {
   try {
     const transactions = await WalletTransaction.find({
@@ -223,23 +244,51 @@ router.get("/dashboard", fetchuser, async (req, res) => {
 
 router.get("/commission/summary", fetchuser, async (req, res) => {
   try {
-    const users = await User.find({
-      role: "agent",
-    }).select(
-      `
-  name
-  email
-  phone
-  referralId
-  designation
-  wallet
-  totalIncome
-  totalBusiness
-  selfBusiness
-      leftBusiness
-      rightBusiness
-  `,
-    );
+    const loggedUser = await User.findById(req.user.id);
+
+    let users = [];
+
+    if (loggedUser.role === "admin") {
+      users = await User.find({
+        role: "agent",
+      }).select(`
+        name
+        email
+        phone
+        referralId
+        designation
+        wallet
+        totalIncome
+        totalBusiness
+        selfBusiness
+        leftBusiness
+        rightBusiness
+      `);
+    } else if (loggedUser.role === "agent") {
+      const downlineIds = await getDownlineIds(loggedUser._id);
+
+      users = await User.find({
+        _id: {
+          $in: [loggedUser._id, ...downlineIds],
+        },
+      }).select(`
+        name
+        email
+        phone
+        referralId
+        designation
+        wallet
+        totalIncome
+        totalBusiness
+        selfBusiness
+        leftBusiness
+        rightBusiness
+      `);
+    } else {
+      return res.status(403).json({
+        msg: "Access denied",
+      });
+    }
 
     const summary = await Promise.all(
       users.map(async (user) => {

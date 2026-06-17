@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
+const ranks = require("../utils/rankSlabs");
 
 const { login, register } = require("../controllers/authController");
 const fetchuser = require("../middleware/fetchUser");
@@ -17,9 +18,9 @@ router.post("/create-user", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
 
-    if (loggedUser.role !== "admin") {
+    if (!["admin", "agent"].includes(loggedUser.role)) {
       return res.status(403).json({
-        msg: "Only admin can create users",
+        msg: "You are not authorized to create users",
       });
     }
 
@@ -50,6 +51,12 @@ router.post("/create-user", fetchuser, async (req, res) => {
       nomineeAadharNumber,
       nomineeAadharPhoto,
     } = req.body;
+
+    if (loggedUser.role === "agent" && role !== "user") {
+      return res.status(403).json({
+        msg: "Agents can only create customers.",
+      });
+    }
 
     let existingUser = await User.findOne({
       email,
@@ -523,6 +530,66 @@ router.get("/my-team-tree", fetchuser, async (req, res) => {
 
     res.json(tree);
   } catch (error) {
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+router.get("/ranks", fetchuser, async (req, res) => {
+  try {
+    res.json(ranks);
+  } catch (err) {
+    res.status(500).json({
+      msg: "Internal Server Error",
+    });
+  }
+});
+
+router.put("/update-rank/:id", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+
+    if (loggedUser.role !== "admin") {
+      return res.status(403).json({
+        msg: "Only admin can update designation",
+      });
+    }
+
+    const { level } = req.body;
+
+    const rank = ranks.find((r) => r.level === Number(level));
+
+    if (!rank) {
+      return res.status(400).json({
+        msg: "Invalid level",
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    if (user.role !== "agent") {
+      return res.status(400).json({
+        msg: "Only agents have ranks",
+      });
+    }
+
+    user.level = rank.level;
+    user.designation = rank.designation;
+    user.directIncomePercent = rank.directIncome;
+
+    await user.save();
+
+    res.json({
+      msg: "Rank updated successfully",
+      user,
+    });
+  } catch (err) {
+    console.log(err);
     res.status(500).send("Internal Server Error");
   }
 });
