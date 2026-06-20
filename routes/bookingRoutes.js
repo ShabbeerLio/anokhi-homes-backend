@@ -71,9 +71,9 @@ router.post("/add", fetchuser, async (req, res) => {
       plot,
       requestAmount,
       sitevisitId,
-      bookingDate,
-      agreementDate,
-      fullDate,
+      bookingDays,
+      agreementDays,
+      fullPaymentDays,
       termsAccepted,
     } = req.body;
 
@@ -88,9 +88,9 @@ router.post("/add", fetchuser, async (req, res) => {
       });
     }
 
-    if (!bookingDate || !agreementDate || !fullDate) {
+    if (!bookingDays || !agreementDays || !fullPaymentDays) {
       return res.status(400).json({
-        message: "All payment dates are required",
+        message: "Please select all payment terms",
       });
     }
 
@@ -127,14 +127,13 @@ router.post("/add", fetchuser, async (req, res) => {
     const agreementAmount = baseAmount * 0.25;
     const fullAmount = baseAmount - bookingAmount - agreementAmount;
 
-    // 🔥 DATE DIFFERENCE
-    const getDaysDiff = (from, to) => {
-      return Math.ceil((new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24));
-    };
-
-    const bookingDue = getDaysDiff(new Date(), bookingDate);
-    const agreementDue = getDaysDiff(bookingDate, agreementDate);
-    const fullDue = getDaysDiff(agreementDate, fullDate);
+    const today = new Date();
+    const bookingDate = new Date(today);
+    bookingDate.setDate(bookingDate.getDate() + Number(bookingDays));
+    const agreementDate = new Date(bookingDate);
+    agreementDate.setDate(agreementDate.getDate() + Number(agreementDays));
+    const fullDate = new Date(agreementDate);
+    fullDate.setDate(fullDate.getDate() + Number(fullPaymentDays));
 
     // 🔥 DATA OBJECT
     let data = {
@@ -151,30 +150,29 @@ router.post("/add", fetchuser, async (req, res) => {
       finalAmount: baseAmount,
       requestAmount,
       termsAccepted,
-
       createdBy: user._id,
-
       paymentSchedule: {
         booking: {
           percent: 10,
           amount: bookingAmount,
-          dueDays: bookingDue,
+          dueDays: Number(bookingDays),
           paid: false,
-          date: new Date(bookingDate),
+          date: bookingDate,
         },
+
         agreement: {
           percent: 25,
           amount: agreementAmount,
-          dueDays: agreementDue,
+          dueDays: Number(agreementDays),
           paid: false,
-          date: new Date(agreementDate),
+          date: agreementDate,
         },
         full: {
           percent: 65,
           amount: fullAmount,
-          dueDays: fullDue,
+          dueDays: Number(fullPaymentDays),
           paid: false,
-          date: new Date(fullDate),
+          date: fullDate,
         },
       },
     };
@@ -253,7 +251,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         (p) => p.plotId === bookingData.plotId,
       );
 
-     if (plot) plot.plotType = "FOR_SALE";
+      if (plot) plot.plotType = "FOR_SALE";
 
       await colonyData.save();
     }
@@ -649,7 +647,7 @@ router.get("/timeline/:bookingId", fetchuser, async (req, res) => {
       booking_requested: 10,
       booking_approved: 11,
       booking_rejected: 12,
-      
+
       // PAYMENTS
       payment_added: 13,
       payment_approved: 14,

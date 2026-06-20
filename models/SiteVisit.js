@@ -50,6 +50,7 @@ const siteVisitSchema = new mongoose.Schema(
     notes: [
       {
         text: String,
+        image: String,
         date: {
           type: Date,
           default: Date.now,

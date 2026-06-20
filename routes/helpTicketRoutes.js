@@ -2,22 +2,32 @@ const express = require("express");
 const router = express.Router();
 const HelpTicket = require("../models/HelpTicket");
 const fetchuser = require("../middleware/fetchUser");
+const User = require("../models/User");
 
 //
 // CREATE TICKET
 //
 router.post("/create", fetchuser, async (req, res) => {
   try {
-    const { title, message, attachments } = req.body;
+    const { type, title, message, attachments } = req.body;
+    const user = await User.findById(req.user.id);
 
-    if (!title || !message) {
+    if (!type || !title || !message) {
       return res.status(400).json({
         success: false,
         message: "Title and message are required",
       });
     }
+    if (type === "Emergency Payout" && user.role !== "agent") {
+      return res.status(403).json({
+        success: false,
+
+        message: "Emergency Payout tickets are only available for Associates.",
+      });
+    }
 
     const ticket = new HelpTicket({
+      type,
       title,
       message,
       attachments: attachments || [],

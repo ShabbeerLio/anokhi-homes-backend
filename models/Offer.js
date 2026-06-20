@@ -9,9 +9,23 @@ const OfferSchema = new mongoose.Schema(
 
     description: String,
 
-    priceValue: {
-      type: Number,
+    // Offer Type
+    offerType: {
+      type: String,
+      enum: ["item", "amount", "percent"],
+      required: true,
+    },
+
+    // Amount / Percent Value
+    offerValue: {
+      type: String,
       default: 0,
+    },
+
+    colonyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Colony",
+      required: true,
     },
 
     userType: [
@@ -33,10 +47,7 @@ const OfferSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-module.exports = mongoose.model(
-  "offer",
-  OfferSchema
-);
+module.exports = mongoose.model("offer", OfferSchema);

@@ -29,6 +29,11 @@ const HelpTicketSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+    type: {
+      type: String,
+      enum: ["Finance", "Profile Update", "Emergency Payout", "Other"],
+      required: true,
+    },
 
     title: {
       type: String,
@@ -73,12 +78,11 @@ const HelpTicketSchema = new mongoose.Schema(
   },
 );
 
-HelpTicketSchema.pre("save", function (next) {
+HelpTicketSchema.pre("save", async function () {
   if (!this.ticketId) {
     this.ticketId =
       "#" + Math.random().toString(36).substring(2, 7).toUpperCase();
   }
-  next();
 });
 
 module.exports = mongoose.model("HelpTicket", HelpTicketSchema);

@@ -166,7 +166,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
 router.post("/add-note/:id", fetchuser, async (req, res) => {
   try {
-    const { note } = req.body;
+    const { note, image } = req.body;
 
     if (!note) {
       return res.status(400).json({
@@ -198,6 +198,7 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     // 🔥 ADD NOTE
     visit.notes.push({
       text: note,
+      image: image || "",
       by: loggedUser._id,
     });
 
@@ -215,14 +216,15 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
 
 router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
   try {
-    const { note } = req.body;
+    const { note, image } = req.body;
 
     if (!note) {
       return res.status(400).json({ message: "Note is required" });
     }
 
     const visit = await SiteVisit.findById(req.params.visitId);
-    if (!visit) return res.status(404).json({ message: "Site visit not found" });
+    if (!visit)
+      return res.status(404).json({ message: "Site visit not found" });
 
     const loggedUser = await User.findById(req.user.id);
 
@@ -240,6 +242,9 @@ router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
     }
 
     noteItem.text = note;
+    if (image !== undefined) {
+      noteItem.image = image;
+    }
     noteItem.editedAt = new Date();
 
     await visit.save();
@@ -255,7 +260,8 @@ router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
 router.delete("/delete-note/:visitId/:noteId", fetchuser, async (req, res) => {
   try {
     const visit = await SiteVisit.findById(req.params.visitId);
-    if (!visit) return res.status(404).json({ message: "Site visit not found" });
+    if (!visit)
+      return res.status(404).json({ message: "Site visit not found" });
 
     const loggedUser = await User.findById(req.user.id);
 

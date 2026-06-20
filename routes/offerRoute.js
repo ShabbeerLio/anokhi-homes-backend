@@ -8,14 +8,13 @@ const fetchuser = require("../middleware/fetchUser");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
-    const offers = await Offer.find().sort({
-      createdAt: -1,
-    });
+    const offers = await Offer.find()
+      .populate("colonyId", "name")
+      .sort({ createdAt: -1 });
 
     res.json(offers);
   } catch (error) {
     console.log(error);
-
     res.status(500).send("Server Error");
   }
 });
@@ -83,6 +82,5 @@ router.put("/toggle/:id", fetchuser, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-
 
 module.exports = router;

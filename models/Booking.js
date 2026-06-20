@@ -40,7 +40,7 @@ const bookingSchema = new mongoose.Schema(
     plotArea: Number,
 
     totalAmount: Number,
-    finalAmount: Number, 
+    finalAmount: Number,
 
     requestAmount: Number,
     termsAccepted: {
@@ -51,6 +51,20 @@ const bookingSchema = new mongoose.Schema(
     amountPaid: {
       type: Number,
       default: 0,
+    },
+    bookingDays: {
+      type: Number,
+      default: 7,
+    },
+
+    agreementDays: {
+      type: Number,
+      default: 15,
+    },
+
+    fullPaymentDays: {
+      type: Number,
+      default: 30,
     },
 
     status: {
