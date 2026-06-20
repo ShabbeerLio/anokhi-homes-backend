@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const LandingPage = require("../models/LandingPage");
 const { uploadImage, uploadPdf } = require("../middleware/cloudinaryUpload");
+const cloudinary = require("../utils/cloudinary");
+const sharp = require("sharp");
+const streamifier = require("streamifier");
 
 /* =================================
    GET LANDING PAGE
@@ -498,21 +501,68 @@ router.delete("/policies/:type/:sectionId", async (req, res) => {
 /* =================================
    UPLOAD IMAGE
 ================================= */
-
-router.post(
-  "/upload/image",
-  uploadImage.single("image"),
-
-  async (req, res) => {
-    try {
-      res.json({
-        url: req.file.path,
+router.post("/upload/image", uploadImage.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        message: "No image uploaded",
       });
-    } catch (error) {
-      console.log(error);
-      res.status(500).send("Server Error");
     }
-  },
-);
 
+    let quality = 85;
+    let compressedBuffer;
+
+    // Compress until under 700KB
+    do {
+      compressedBuffer = await sharp(req.file.buffer)
+        .rotate()
+        .resize({
+          width: 1920,
+          withoutEnlargement: true,
+        })
+        .jpeg({
+          quality,
+          mozjpeg: true,
+        })
+        .toBuffer();
+
+      quality -= 5;
+    } while (compressedBuffer.length > 700 * 1024 && quality >= 30);
+
+    console.log(
+      "Final Size:",
+      (compressedBuffer.length / 1024).toFixed(2),
+      "KB",
+    );
+
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: "landing-images",
+          resource_type: "image",
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        },
+      );
+
+      streamifier.createReadStream(compressedBuffer).pipe(uploadStream);
+    });
+
+    res.json({
+      success: true,
+      url: result.secure_url,
+      public_id: result.public_id,
+      size: `${(compressedBuffer.length / 1024).toFixed(2)} KB`,
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
 module.exports = router;

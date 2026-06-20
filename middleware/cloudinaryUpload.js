@@ -1,22 +1,17 @@
 const multer = require("multer");
-
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
-
 const cloudinary = require("../utils/cloudinary");
 
-/* ================= IMAGE ================= */
-
-const imageStorage = new CloudinaryStorage({
-  cloudinary,
-
-  params: async (req, file) => ({
-    folder: "landing-images",
-
-    allowed_formats: ["jpg", "jpeg", "png", "webp"],
-  }),
+// ================= IMAGE =================
+// Store image in memory first
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB
+  },
 });
 
-/* ================= PDF ================= */
+// ================= PDF =================
 
 const pdfStorage = new CloudinaryStorage({
   cloudinary,
@@ -26,10 +21,6 @@ const pdfStorage = new CloudinaryStorage({
     format: "pdf",
     public_id: Date.now() + "-" + file.originalname,
   }),
-});
-
-const uploadImage = multer({
-  storage: imageStorage,
 });
 
 const uploadPdf = multer({
