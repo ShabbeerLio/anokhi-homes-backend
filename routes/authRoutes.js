@@ -384,6 +384,45 @@ router.get("/all-users", fetchuser, async (req, res) => {
 });
 
 /* ===========================
+   GET USER BY ID
+=========================== */
+
+router.get("/user/:id", fetchuser, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select("-password")
+      .populate(
+        "referredBy",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate(
+        "parent",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate(
+        "leftChildren",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate(
+        "rightChildren",
+        "name phone email referralId designation directIncomePercent level wallet totalIncome",
+      )
+      .populate("staffRole");
+
+    if (!user) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+/* ===========================
    GET user by role
 =========================== */
 
