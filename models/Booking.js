@@ -7,7 +7,12 @@ const bookingSchema = new mongoose.Schema(
     sitevisitId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "SiteVisit",
-      required: true,
+      // required: true,
+    },
+    holdId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SiteVisit",
+      // required: true,
     },
     customer: {
       type: mongoose.Schema.Types.ObjectId,

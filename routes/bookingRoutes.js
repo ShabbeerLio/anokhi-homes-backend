@@ -8,6 +8,8 @@ const fetchuser = require("../middleware/fetchUser");
 const SiteVisit = require("../models/SiteVisit");
 const Lead = require("../models/Lead");
 const Payment = require("../models/Payment");
+const PlotHold = require("../models/PlotHold");
+const { notifyUser, notifyAdmins } = require("../utils/notify");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -111,7 +113,28 @@ router.post("/add", fetchuser, async (req, res) => {
     }
 
     // 🔥 CHECK AVAILABILITY
-    if (plotData.plotType !== "FOR_SALE") {
+    const hold = await PlotHold.findOne({
+      colony,
+      plotId: plot,
+      status: "ACTIVE",
+    });
+
+    let isOwnHold = false;
+
+    if (hold) {
+      if (
+        hold.agent.toString() === user._id.toString() &&
+        hold.customer.toString() === customer.toString()
+      ) {
+        isOwnHold = true;
+      } else {
+        return res.status(400).json({
+          message: "Plot is already held by another agent.",
+        });
+      }
+    }
+
+    if (!isOwnHold && plotData.plotType !== "FOR_SALE") {
       return res.status(400).json({
         message: "Plot is not available",
       });
@@ -185,27 +208,143 @@ router.post("/add", fetchuser, async (req, res) => {
       data.agent = user._id;
       data.status = "approval";
     }
-
     // 🔥 CREATE BOOKING
     const booking = await Booking.create(data);
+    const agent = await User.findById(booking.agent);
 
-    // 🔥 MARK PLOT BOOKED
+    if (user.role === "agent") {
+      await notifyAdmins({
+        sender: user._id,
+        title: "New Booking Request",
+        message: `${user.name} created a booking request.`,
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+
+      await notifyUser({
+        user: booking.customer,
+        sender: user._id,
+        title: "Booking Created",
+        message: "Your booking request has been submitted.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+    } else {
+      await notifyUser({
+        user: booking.agent,
+        sender: user._id,
+        title: "New Booking Assigned",
+        message: "A booking has been assigned to you.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+
+      await notifyUser({
+        user: booking.customer,
+        sender: user._id,
+        title: "Booking Created",
+        message: "Your booking has been created successfully.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+    }
+    if (agent) {
+      agent.bookingPoints += 15;
+      await agent.save();
+      await updateAgentRating(agent._id);
+    }
+    // ===========================================
+    // LINK HOLD PAYMENT (IF ANY)
+    // ===========================================
+    let holdPayment = null;
+
+    if (hold) {
+      holdPayment = await Payment.findOne({
+        hold: hold._id,
+        isHoldPayment: true,
+        status: "approved",
+      });
+    }
+
+    if (holdPayment) {
+      // attach payment to booking
+      holdPayment.booking = booking._id;
+      await holdPayment.save();
+      // add paid amount
+      booking.amountPaid += holdPayment.amount;
+      // reduce booking installment
+      booking.paymentSchedule.booking.amount = Math.max(
+        booking.paymentSchedule.booking.amount - holdPayment.amount,
+        0,
+      );
+
+      // if booking installment completed
+
+      if (booking.paymentSchedule.booking.amount === 0) {
+        booking.paymentSchedule.booking.paid = true;
+        booking.paymentSchedule.booking.date = new Date();
+      }
+      await booking.save();
+
+      // ===========================================
+      // MLM FOR HOLD PAYMENT
+      // ===========================================
+
+      if (!holdPayment.mlmProcessed && booking.agent) {
+        await updateBusinessTree(booking.agent, holdPayment.amount);
+        await distributeDirectIncome(
+          booking.agent,
+          holdPayment.amount,
+          holdPayment._id,
+        );
+        await distributeDifferenceIncome(
+          booking.agent,
+          holdPayment.amount,
+          holdPayment._id,
+        );
+        await distributeMatchingIncome(booking.agent);
+        await checkRewards(booking.agent);
+        holdPayment.mlmProcessed = true;
+        await holdPayment.save();
+      }
+    }
+
+    // ===========================================
+    // RELEASE HOLD
+    // ===========================================
+
+    if (hold) {
+      hold.status = "RELEASED";
+      hold.releasedAt = new Date();
+      await hold.save();
+    }
+
+    // ===========================================
+    // UPDATE PLOT
+    // ===========================================
+
     plotData.plotType = "PENDING";
     await colonyData.save();
 
-    // 🔥 UPDATE SITE VISIT
+    // ===========================================
+    // UPDATE SITE VISIT
+    // ===========================================
+
     await SiteVisit.findByIdAndUpdate(sitevisitId, {
       status: "completed",
       convertedAt: new Date(),
       $push: {
         notes: {
           text: "Site visit completed & booking created",
+
           by: user._id,
         },
       },
     });
-
-    res.json(booking);
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
@@ -269,7 +408,47 @@ router.put("/action/:id", fetchuser, async (req, res) => {
     const booking = await Booking.findByIdAndUpdate(req.params.id, update, {
       new: true,
     });
+    if (action === "approve") {
+      await notifyUser({
+        user: booking.agent,
+        sender: user._id,
+        title: "Booking Approved",
+        message: "Your booking request has been approved.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
 
+      await notifyUser({
+        user: booking.customer,
+        sender: user._id,
+        title: "Booking Approved",
+        message: "Your booking has been approved.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+    } else if (action === "reject") {
+      await notifyUser({
+        user: booking.agent,
+        sender: user._id,
+        title: "Booking Rejected",
+        message: "Your booking request has been rejected.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+
+      await notifyUser({
+        user: booking.customer,
+        sender: user._id,
+        title: "Booking Rejected",
+        message: "Your booking request has been rejected.",
+        type: "booking",
+        referenceId: booking._id,
+        referenceModel: "Booking",
+      });
+    }
     res.json(booking);
   } catch (error) {
     res.status(500).send("Server Error");
@@ -318,7 +497,24 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     });
 
     await booking.save();
+    await notifyAdmins({
+      sender: loggedUser._id,
+      title: "Booking Updated",
+      message: `${loggedUser.name} added a booking note.`,
+      type: "booking",
+      referenceId: booking._id,
+      referenceModel: "Booking",
+    });
 
+    await notifyUser({
+      user: booking.customer,
+      sender: loggedUser._id,
+      title: "Booking Updated",
+      message: "A new update has been added to your booking.",
+      type: "booking",
+      referenceId: booking._id,
+      referenceModel: "Booking",
+    });
     res.json({
       message: "Note added successfully",
       booking,

@@ -23,10 +23,24 @@ const siteVisitSchema = new mongoose.Schema(
       ref: "Location",
     },
 
-    colony: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Colony",
-    },
+    colonies: [
+      {
+        colony: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Colony",
+        },
+
+        status: {
+          type: String,
+          enum: ["pending", "done"],
+          default: "pending",
+        },
+
+        completedAt: Date,
+
+        image: String,
+      },
+    ],
 
     visitDate: String, // or Date if you prefer
 
@@ -50,6 +64,10 @@ const siteVisitSchema = new mongoose.Schema(
     notes: [
       {
         text: String,
+        colony: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Colony",
+        },
         image: String,
         date: {
           type: Date,

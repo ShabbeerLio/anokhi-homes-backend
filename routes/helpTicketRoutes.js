@@ -166,7 +166,24 @@ router.put("/reply/:id", fetchuser, async (req, res) => {
       role: req.user.role,
     });
 
-    ticket.status = "Replied";
+    const loggedUser = await User.findById(req.user.id);
+
+    ticket.replies.unshift({
+      title,
+      message,
+      attachments: attachments || [],
+      by: loggedUser._id,
+      role: loggedUser.role,
+    });
+
+    // Admin/Staff replied
+    if (loggedUser.role === "admin" || loggedUser.role === "staff") {
+      ticket.status = "Replied";
+    }
+    // Agent/User replied
+    else {
+      ticket.status = "Response";
+    }
 
     await ticket.save();
 

@@ -30,6 +30,7 @@ router.post("/create-user", fetchuser, async (req, res) => {
       phone,
       password,
       role,
+      staffRole,
 
       // MLM
       referralId,
@@ -75,6 +76,7 @@ router.post("/create-user", fetchuser, async (req, res) => {
       phone,
       password: hashedPassword,
       role,
+      staffRole,
       status: role === "user" ? "active" : "approval",
       createdBy: loggedUser._id,
 
@@ -95,9 +97,23 @@ router.post("/create-user", fetchuser, async (req, res) => {
       nomineeAadharNumber,
       nomineeAadharPhoto,
 
-      designation: role === "admin" ? "Executive Director" : "Sales Executive",
-      level: role === "admin" ? 16 : 1,
-      directIncomePercent: role === "admin" ? 20 : 5,
+      designation:
+        role === "admin"
+          ? "Executive Director"
+          : role === "agent"
+            ? "Sales Executive"
+            : "",
+      level: role === "admin" ? 16 : role === "agent" ? 1 : "",
+      directIncomePercent: role === "admin" ? 20 : role === "agent" ? 5 : "",
+
+      // designation:
+      //   role === "admin"
+      //     ? "Executive Director"
+      //     : role === "staff"
+      //       ? ""
+      //       : "Sales Executive",
+      // level: role === "admin" ? 16 : role === "staff" ? "" : 1,
+      // directIncomePercent: role === "admin" ? 20 : role === "staff" ? "" : 5,
     });
 
     if (role === "agent") {
@@ -337,7 +353,8 @@ router.post("/getuser", fetchuser, async (req, res) => {
       .populate(
         "rightChildren",
         "name phone email referralId designation directIncomePercent level wallet totalIncome",
-      );
+      )
+      .populate("staffRole", "name ");
 
     res.send(user);
   } catch (error) {
@@ -356,7 +373,8 @@ router.get("/all-users", fetchuser, async (req, res) => {
     const users = await User.find()
       .select("-password")
       .populate("referredBy", "name phone email referralId designation")
-      .populate("parent", "name phone email referralId designation");
+      .populate("parent", "name phone email referralId designation")
+      .populate("staffRole", "name ");
 
     res.json(users);
   } catch (error) {

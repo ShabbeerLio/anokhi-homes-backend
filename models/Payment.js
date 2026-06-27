@@ -5,9 +5,12 @@ const paymentSchema = new mongoose.Schema(
     booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
-      required: true,
     },
-
+    hold: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PlotHold",
+      default: null,
+    },
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -26,7 +29,7 @@ const paymentSchema = new mongoose.Schema(
     },
     paymentType: {
       type: String,
-      enum: ["booking", "agreement", "full"],
+      enum: ["booking", "agreement", "full", "hold"],
       required: true,
     },
 
@@ -50,6 +53,17 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    isHoldPayment: {
+      type: Boolean,
+      default: false,
+    },
+
+    receiptNo: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
     mlmProcessed: {
       type: Boolean,
       default: false,

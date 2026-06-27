@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const IncomeHistory = require("../models/IncomeHistory");
 const rankSlabs = require("../utils/rankSlabs");
+const WalletTransaction = require("../models/WalletTransaction");
+const getCurrentCycle = require("../utils/getCurrentCycle");
 
 const distributeDirectIncome = async (agentId, businessAmount, paymentId) => {
   try {
@@ -30,7 +32,20 @@ const distributeDirectIncome = async (agentId, businessAmount, paymentId) => {
     }
     if (totalIncome <= 0) return;
     // Direct income is instan
-    user.wallet += totalIncome;
+    // user.wallet += totalIncome;
+    user.walletHold += totalIncome;
+    const { cycleStart, cycleEnd } = getCurrentCycle();
+
+    await WalletTransaction.create({
+      user: user._id,
+      amount: totalIncome,
+      type: "credit",
+      source: "direct_income",
+      remark: "Direct Income",
+      cycleStart,
+      cycleEnd,
+      isSettled: false,
+    });
     user.totalIncome += totalIncome;
     user.directIncomeBusinessProcessed = newBusiness;
     await user.save();

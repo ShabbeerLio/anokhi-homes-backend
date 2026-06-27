@@ -61,7 +61,7 @@ const HelpTicketSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Open", "Replied", "Closed"],
+      enum: ["Open", "Response", "Replied", "Closed"],
       default: "Open",
     },
 

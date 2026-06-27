@@ -7,6 +7,10 @@ connectToMongo();
 // require("./utils/matchingIncomeCycle");
 // require("./utils/royaltyCycle");
 require("./utils/royaltydistribution");
+require("./cron/holdExpiryCron");
+require("./cron/ticketExpiryCron");
+require("./cron/payoutCron");
+require("./cron/releasePayoutCron");
 
 const express = require("express");
 const cors = require("cors");
@@ -38,6 +42,11 @@ app.use("/api/discount", require("./routes/discountRoute"));
 app.use("/api/cashback", require("./routes/cashbackRoutes"));
 app.use("/api/help", require("./routes/helpTicketRoutes"));
 app.use("/api/payment-terms", require("./routes/paymentTermsRoutes"));
+app.use("/api/plothold", require("./routes/plotHoldRoutes"));
+app.use("/api/payout-settings", require("./routes/payoutSetting"));
+app.use("/api/rating", require("./routes/ratingRoutes"));
+app.use("/api/notification", require("./routes/notificationRoutes"));
+app.use("/api/staff-role", require("./routes/staffRoleRoutes"));
 
 app.get("/", (req, res) => {
   res.json({ message: "Hello MERN Stack! " });

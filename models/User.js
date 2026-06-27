@@ -45,14 +45,9 @@ const userSchema = new mongoose.Schema(
     nomineeAadharPhoto: String,
 
     staffRole: {
-      type: String,
-      enum: [
-        "lead_manager",
-        "plot_manager",
-        "sales_manager",
-        "account_manager",
-        "operations",
-      ],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "StaffRole",
+      default: null,
     },
 
     teamLeader: {
@@ -177,6 +172,20 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    walletAvailable: {
+      type: Number,
+      default: 0,
+    },
+
+    walletHold: {
+      type: Number,
+      default: 0,
+    },
+
+    walletWithdrawn: {
+      type: Number,
+      default: 0,
+    },
 
     totalIncome: {
       type: Number,
@@ -215,6 +224,53 @@ const userSchema = new mongoose.Schema(
     activeTeam: {
       type: Number,
       default: 0,
+    },
+
+    /* ==========================
+   PERFORMANCE RATINGS
+========================== */
+
+    leadPoints: {
+      type: Number,
+      default: 0,
+    },
+
+    siteVisitPoints: {
+      type: Number,
+      default: 0,
+    },
+
+    bookingPoints: {
+      type: Number,
+      default: 0,
+    },
+
+    /* ==========================
+   CUSTOMER RATINGS
+========================== */
+
+    customerRating: {
+      type: Number,
+      default: 0,
+    },
+
+    totalCustomerRatings: {
+      type: Number,
+      default: 0,
+    },
+
+    /* ==========================
+   OVERALL
+========================== */
+
+    overallRating: {
+      type: Number,
+      default: 0,
+    },
+
+    badge: {
+      type: String,
+      default: "Starter",
     },
   },
   { timestamps: true },

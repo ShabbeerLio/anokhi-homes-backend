@@ -5,6 +5,8 @@ const SiteVisit = require("../models/SiteVisit");
 const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
 const Lead = require("../models/Lead");
+const updateAgentRating = require("../utils/updateAgentRating");
+const { notifyUser, notifyAdmins } = require("../utils/notify");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -30,7 +32,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("customer", "name phone")
       .populate("agent", "name phone")
       .populate("location", "name")
-      .populate("colony", "name")
+      .populate("colonies.colony", "name")
       .populate("notes.by", "name role");
 
     res.json(visits);
@@ -47,7 +49,10 @@ router.post("/add", fetchuser, async (req, res) => {
       lead: req.body.lead,
       customer: req.body.customer,
       location: req.body.location,
-      colony: req.body.colony,
+      colonies: req.body.colonies.map((id) => ({
+        colony: id,
+        status: "pending",
+      })),
       visitDate: req.body.visitDate,
       createdBy: loggedUser._id,
     };
@@ -65,7 +70,53 @@ router.post("/add", fetchuser, async (req, res) => {
     }
 
     const visit = await SiteVisit.create(data);
+    const agent = await User.findById(visit.agent);
+    if (loggedUser.role === "agent") {
+      await notifyAdmins({
+        sender: loggedUser._id,
+        title: "New Site Visit Request",
+        message: `${loggedUser.name} requested a site visit for ${req.body.visitDate}.`,
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
 
+      await notifyUser({
+        user: visit.customer,
+        sender: loggedUser._id,
+        title: "Site Visit Requested",
+        message: "Your associate has requested a site visit.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+    } else {
+      await notifyUser({
+        user: visit.agent,
+        sender: loggedUser._id,
+        title: "New Site Visit Assigned",
+        message: "A new site visit has been assigned to you.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+
+      await notifyUser({
+        user: visit.customer,
+        sender: loggedUser._id,
+        title: "Site Visit Scheduled",
+        message: "Your site visit has been scheduled successfully.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+    }
+
+    if (agent) {
+      agent.siteVisitPoints += 5;
+      await agent.save();
+      await updateAgentRating(agent._id);
+    }
     // ✅ UPDATE LEAD STATUS
 
     await Lead.findByIdAndUpdate(req.body.lead, {
@@ -77,6 +128,14 @@ router.post("/add", fetchuser, async (req, res) => {
           by: loggedUser._id,
         },
       },
+    });
+    await notifyAdmins({
+      sender: loggedUser._id,
+      title: "Lead Converted",
+      message: `${visit.customer} has been converted into a Site Visit.`,
+      type: "lead",
+      referenceId: req.body.lead,
+      referenceModel: "Lead",
     });
 
     res.json(visit);
@@ -153,6 +212,68 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       new: true,
     }).populate("notes.by", "name");
 
+    if (action === "approve") {
+      await notifyUser({
+        user: visit.agent,
+        sender: loggedUser._id,
+        title: "Site Visit Approved",
+        message: "Your site visit request has been approved.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+
+      await notifyUser({
+        user: visit.customer,
+        sender: loggedUser._id,
+        title: "Site Visit Approved",
+        message: "Your site visit has been approved.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+    } else if (action === "reject") {
+      await notifyUser({
+        user: visit.agent,
+        sender: loggedUser._id,
+        title: "Site Visit Rejected",
+        message: "Your site visit request has been rejected.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+
+      await notifyUser({
+        user: visit.customer,
+        sender: loggedUser._id,
+        title: "Site Visit Cancelled",
+        message: "Your site visit request has been cancelled.",
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+    } else if (action === "reschedule") {
+      await notifyUser({
+        user: visit.agent,
+        sender: loggedUser._id,
+        title: "Site Visit Rescheduled",
+        message: `Your site visit has been rescheduled to ${visit.visitDate}.`,
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+
+      await notifyUser({
+        user: visit.customer,
+        sender: loggedUser._id,
+        title: "Site Visit Rescheduled",
+        message: `Your site visit has been rescheduled to ${visit.visitDate}.`,
+        type: "sitevisit",
+        referenceId: visit._id,
+        referenceModel: "SiteVisit",
+      });
+    }
+
     res.json(visit);
   } catch (error) {
     console.log(error);
@@ -166,13 +287,13 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
 router.post("/add-note/:id", fetchuser, async (req, res) => {
   try {
-    const { note, image } = req.body;
+    const { note, image, colonyId } = req.body;
 
-    if (!note) {
-      return res.status(400).json({
-        message: "Note is required",
-      });
-    }
+    // if (!note) {
+    //   return res.status(400).json({
+    //     message: "Note is required",
+    //   });
+    // }
 
     const visit = await SiteVisit.findById(req.params.id);
 
@@ -199,11 +320,27 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
     visit.notes.push({
       text: note,
       image: image || "",
+      colony: colonyId,
       by: loggedUser._id,
     });
 
+    const colony = visit.colonies.find((c) => c.colony.toString() === colonyId);
+
+    if (colony) {
+      colony.status = "done";
+    }
+
     await visit.save();
     await visit.populate("notes.by", "name role");
+    await notifyAdmins({
+      sender: loggedUser._id,
+      title: "Site Visit Updated",
+      message: `${loggedUser.name} added a site visit note.`,
+      type: "sitevisit",
+      referenceId: visit._id,
+      referenceModel: "SiteVisit",
+    });
+
     res.json({
       message: "Note added successfully",
       visit,
@@ -218,9 +355,9 @@ router.put("/edit-note/:visitId/:noteId", fetchuser, async (req, res) => {
   try {
     const { note, image } = req.body;
 
-    if (!note) {
-      return res.status(400).json({ message: "Note is required" });
-    }
+    // if (!note) {
+    //   return res.status(400).json({ message: "Note is required" });
+    // }
 
     const visit = await SiteVisit.findById(req.params.visitId);
     if (!visit)
@@ -291,14 +428,40 @@ router.delete("/delete-note/:visitId/:noteId", fetchuser, async (req, res) => {
 
 router.put("/complete/:id", fetchuser, async (req, res) => {
   try {
+    const loggedUser = await User.findById(req.user.id);
+
     const visit = await SiteVisit.findByIdAndUpdate(
       req.params.id,
-      { status: "completed" },
-      { new: true },
+      {
+        status: "completed",
+      },
+      {
+        new: true,
+      },
     );
+
+    await notifyAdmins({
+      sender: loggedUser._id,
+      title: "Site Visit Completed",
+      message: `${loggedUser.name} completed a site visit.`,
+      type: "sitevisit",
+      referenceId: visit._id,
+      referenceModel: "SiteVisit",
+    });
+
+    await notifyUser({
+      user: visit.customer,
+      sender: loggedUser._id,
+      title: "Site Visit Completed",
+      message: "Your site visit has been completed successfully.",
+      type: "sitevisit",
+      referenceId: visit._id,
+      referenceModel: "SiteVisit",
+    });
 
     res.json(visit);
   } catch (error) {
+    console.log(error);
     res.status(500).send("Server Error");
   }
 });

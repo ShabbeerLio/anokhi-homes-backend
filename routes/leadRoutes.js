@@ -4,7 +4,8 @@ const router = express.Router();
 const Lead = require("../models/Lead");
 const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
-
+const updateAgentRating = require("../utils/updateAgentRating");
+const { notifyUser, notifyAdmins, notifyMany } = require("../utils/notify");
 /* =========================
    GET ALL LEADS
 ========================= */
@@ -108,6 +109,32 @@ router.post("/add", fetchuser, async (req, res) => {
     }
 
     const lead = await Lead.create(leadData);
+    const agent = await User.findById(lead.agent);
+    if (loggedUser.role === "agent") {
+      await notifyAdmins({
+        sender: loggedUser._id,
+        title: "New Lead Created",
+        message: `${loggedUser.name} created a new lead for ${lead.name}.`,
+        type: "lead",
+        referenceId: lead._id,
+        referenceModel: "Lead",
+      });
+    }
+    await notifyUser({
+      user: lead.customer,
+      sender: loggedUser._id,
+      title: "Lead Created",
+      message: "Your enquiry has been received successfully.",
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
+    });
+
+    if (agent) {
+      agent.leadPoints += 2;
+      await agent.save();
+      await updateAgentRating(agent._id);
+    }
 
     res.json(lead);
   } catch (error) {
@@ -151,6 +178,14 @@ router.post("/add-note/:id", fetchuser, async (req, res) => {
       });
     }
 
+    await notifyAdmins({
+      sender: loggedUser._id,
+      title: "Lead Updated",
+      message: `${loggedUser.name} added a note to ${lead.name}.`,
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
+    });
     // 🔥 ADD NOTE
     lead.notes.push({
       text: note,
@@ -293,7 +328,24 @@ router.put("/assign/:id", fetchuser, async (req, res) => {
       },
       { new: true },
     );
-
+    await notifyUser({
+      user: agentId,
+      sender: admin._id,
+      title: "New Lead Assigned",
+      message: `${lead.name} has been assigned to you.`,
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
+    });
+    await notifyUser({
+      user: lead.customer,
+      sender: admin._id,
+      title: "Associate Assigned",
+      message: `${lead.name}, your enquiry has been assigned to an associate.`,
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
+    });
     res.json(lead);
   } catch (err) {
     res.status(500).send("Server Error");
@@ -303,33 +355,43 @@ router.put("/assign/:id", fetchuser, async (req, res) => {
 router.put("/agent-action/:id", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-
     if (user.role !== "agent") {
       return res.status(403).json({ message: "Only agent allowed" });
     }
-
     const { action, note } = req.body;
-
     const lead = await Lead.findById(req.params.id);
-
     if (!lead) return res.status(404).json({ message: "Lead not found" });
-
     if (lead.agent.toString() !== user._id.toString()) {
       return res.status(403).json({ message: "Not your lead" });
     }
 
     let update = {};
-
     // ✅ ACCEPT
     if (action === "accept") {
       update.isAccepted = true;
-
       update.$push = {
         notes: {
           text: note || `Accepted by ${user.name}`,
           by: user._id,
         },
       };
+      await notifyAdmins({
+        sender: user._id,
+        title: "Lead Accepted",
+        message: `${user.name} accepted lead ${lead.name}.`,
+        type: "lead",
+        referenceId: lead._id,
+        referenceModel: "Lead",
+      });
+      await notifyUser({
+        user: lead.customer,
+        sender: user._id,
+        title: "Lead Accepted",
+        message: "Your associate has accepted your enquiry.",
+        type: "lead",
+        referenceId: lead._id,
+        referenceModel: "Lead",
+      });
     }
 
     // ❌ REJECT
@@ -349,6 +411,23 @@ router.put("/agent-action/:id", fetchuser, async (req, res) => {
           by: user._id,
         },
       };
+      await notifyAdmins({
+        sender: user._id,
+        title: "Lead Rejected",
+        message: `${user.name} rejected lead ${lead.name}.`,
+        type: "lead",
+        referenceId: lead._id,
+        referenceModel: "Lead",
+      });
+      await notifyUser({
+        user: lead.customer,
+        sender: user._id,
+        title: "Lead Update",
+        message: "Your enquiry is being reassigned.",
+        type: "lead",
+        referenceId: lead._id,
+        referenceModel: "Lead",
+      });
     } else {
       return res.status(400).json({ message: "Invalid action" });
     }
@@ -374,6 +453,7 @@ router.put("/mark-lost/:id", fetchuser, async (req, res) => {
     }
 
     const lead = await Lead.findById(req.params.id);
+
     if (!lead) {
       return res.status(404).json({ message: "Lead not found" });
     }
@@ -399,6 +479,23 @@ router.put("/mark-lost/:id", fetchuser, async (req, res) => {
     lead.notes.push({
       text: `Marked as lost: ${reason}`,
       by: user._id,
+    });
+    await notifyAdmins({
+      sender: user._id,
+      title: "Lead Marked Lost",
+      message: `${user.name} marked ${lead.name} as lost.`,
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
+    });
+    await notifyUser({
+      user: lead.customer,
+      sender: user._id,
+      title: "Lead Closed",
+      message: "Your enquiry has been closed.",
+      type: "lead",
+      referenceId: lead._id,
+      referenceModel: "Lead",
     });
 
     await lead.save();

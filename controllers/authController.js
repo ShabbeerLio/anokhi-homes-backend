@@ -14,6 +14,7 @@ const register = async (req, res) => {
       phone,
       password,
       role,
+      staffRole,
       // MLM
       referralId,
       position,
@@ -53,6 +54,7 @@ const register = async (req, res) => {
       phone,
       password: hashed,
       role,
+      staffRole,
       status: role === "user" ? "active" : "approval",
       address,
 
@@ -77,8 +79,8 @@ const register = async (req, res) => {
           : role === "agent"
             ? "Sales Executive"
             : "",
-      level: role === "admin" ? 16 : 1,
-      directIncomePercent: role === "admin" ? 20 : 5,
+      level: role === "admin" ? 16 : role === "agent" ? 1 : "",
+      directIncomePercent: role === "admin" ? 20 : role === "agent" ? 5 : "",
     });
 
     if (role === "agent") {

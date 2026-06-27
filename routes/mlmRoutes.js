@@ -7,6 +7,7 @@ const User = require("../models/User");
 const IncomeHistory = require("../models/IncomeHistory");
 const WalletTransaction = require("../models/WalletTransaction");
 const rankSlabs = require("../utils/rankSlabs");
+const Payout = require("../models/Payout");
 
 /* =================================
    WALLET HISTORY
@@ -283,6 +284,10 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         selfBusiness
         leftBusiness
         rightBusiness
+        ratingPoints
+        averageRating
+        totalRatings
+        badge
       `);
     } else {
       return res.status(403).json({
@@ -295,6 +300,9 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         const histories = await IncomeHistory.find({
           user: user._id,
         });
+        const payouts = await Payout.find({
+          user: user._id,
+        }).sort({ cycleStart: -1 });
 
         const directIncome = histories
           .filter((i) => i.type === "direct_income")
@@ -347,6 +355,32 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
               (currentSlab.max - currentSlab.min)) *
             100;
         }
+        const grossCommission = payouts.reduce(
+          (sum, p) => sum + p.grossAmount,
+          0,
+        );
+
+        const tdsDeducted = payouts.reduce((sum, p) => sum + p.tdsAmount, 0);
+
+        const adminDeducted = payouts.reduce(
+          (sum, p) => sum + p.adminChargeAmount,
+          0,
+        );
+
+        const releasedCommission = payouts
+          .filter((p) => p.status === "released")
+          .reduce((sum, p) => sum + p.netAmount, 0);
+
+        const holdCommission = payouts
+          .filter((p) => p.status === "hold")
+          .reduce((sum, p) => sum + p.netAmount, 0);
+
+        const totalNetCommission = payouts.reduce(
+          (sum, p) => sum + p.netAmount,
+          0,
+        );
+
+        const nextPayout = payouts.find((p) => p.status === "hold") || null;
 
         return {
           ...user.toObject(),
@@ -374,9 +408,20 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
 
           pendingCommission,
           creditedCommission,
-
+          grossCommission,
+          tdsDeducted,
+          adminDeducted,
+          totalNetCommission,
+          releasedCommission,
+          holdCommission,
+          nextPayout,
+          payouts,
           histories,
           cycleDate: nextCycleDate,
+          ratingPoints: user.ratingPoints,
+          averageRating: user.averageRating,
+          totalRatings: user.totalRatings,
+          badge: user.badge,
         };
       }),
     );

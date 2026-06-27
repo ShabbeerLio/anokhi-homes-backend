@@ -13,6 +13,9 @@ const WalletTransaction = require("../models/WalletTransaction");
 const distributeMatchingIncome = require("../mlmController/distributeMatchingIncome");
 const Withdrawal = require("../models/Withdrawal");
 const checkRewards = require("../mlmController/checkRewards");
+const generateReceiptNo = require("../utils/generateReceiptNo");
+const generateReceipt = require("../utils/generateReceipt");
+const { notifyUser, notifyAdmins } = require("../utils/notify");
 
 // =========================
 // GET ALL PAYMENTS
@@ -38,33 +41,39 @@ router.get("/", fetchuser, async (req, res) => {
         path: "booking",
         populate: [
           { path: "location", select: "name" },
-          { path: "colony", select: "name" },
+          { path: "colony", select: "name layout.plots" },
+          { path: "agent", select: "name phone" },
+          { path: "customer", select: "name phone" },
+        ],
+      })
+      .populate({
+        path: "hold",
+        populate: [
+          { path: "colony", select: "name layout.plots" },
           { path: "agent", select: "name phone" },
           { path: "customer", select: "name phone" },
         ],
       });
 
-    // console.log(payments,"pymt")
-    const populatePlotData = async (payment) => {
-      if (!payment.booking) return payment;
+    const paymentsWithPlot = payments.map((payment) => {
+      payment = payment.toObject();
 
-      const colonyData = await Colony.findById(payment.booking.colony);
+      // booking plot
+      if (payment.booking?.colony) {
+        payment.booking.plot = payment.booking.colony.layout.plots.find(
+          (p) => p._id.toString() === payment.booking.plot.toString(),
+        );
+      }
 
-      if (!colonyData) return payment;
-
-      const plotData = colonyData.layout.plots.find(
-        (p) => p._id.toString() === payment.booking.plot.toString(),
-      );
-
-      if (plotData) {
-        payment = payment.toObject();
-        payment.booking.plot = plotData;
+      // hold plot
+      if (payment.hold?.colony) {
+        payment.hold.plot = payment.hold.colony.layout.plots.find(
+          (p) => p._id.toString() === payment.hold.plotId.toString(),
+        );
       }
 
       return payment;
-    };
-
-    const paymentsWithPlot = await Promise.all(payments.map(populatePlotData));
+    });
 
     res.json(paymentsWithPlot);
   } catch (error) {
@@ -109,6 +118,7 @@ router.post("/add", fetchuser, async (req, res) => {
       data.approvedBy = user._id;
     }
 
+    data.receiptNo = await generateReceiptNo();
     const payment = await Payment.create(data);
 
     // ======================================================
@@ -191,7 +201,24 @@ router.post("/add", fetchuser, async (req, res) => {
         await payment.save();
       }
     }
+    await notifyAdmins({
+      sender: createdBy,
+      title: "Payment Submitted",
+      message: `₹${amount} payment submitted for booking.`,
+      type: "payment",
+      referenceId: payment._id,
+      referenceModel: "Payment",
+    });
 
+    await notifyUser({
+      user: booking.customer,
+      sender: createdBy,
+      title: "Payment Submitted",
+      message: `₹${amount} payment has been received and is awaiting approval.`,
+      type: "payment",
+      referenceId: payment._id,
+      referenceModel: "Payment",
+    });
     res.json(payment);
   } catch (error) {
     console.log(error);
@@ -318,7 +345,41 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
       if (booking.amountPaid >= booking.finalAmount) {
         booking.status = "confirmed";
+        await notifyAdmins({
+          sender: booking.agent,
+          title: "Booking Confirmed",
+          message: "A booking has been fully completed.",
+          type: "booking",
+          referenceId: booking._id,
+          referenceModel: "Booking",
+        });
 
+        await notifyUser({
+          user: booking.agent,
+          sender: booking.customer,
+          title: "Booking Confirmed",
+          message: "Congratulations! Your booking is fully completed.",
+          type: "booking",
+          referenceId: booking._id,
+          referenceModel: "Booking",
+        });
+
+        await notifyUser({
+          user: booking.customer,
+          sender: booking.agent,
+          title: "Booking Confirmed",
+          message: "Congratulations! Your booking has been confirmed.",
+          type: "booking",
+          referenceId: booking._id,
+          referenceModel: "Booking",
+        });
+        const agent = await User.findById(booking.agent);
+
+        if (agent) {
+          agent.ratingPoints += 20;
+
+          await agent.save();
+        }
         const colony = await Colony.findById(booking.colony);
 
         if (colony) {
@@ -356,8 +417,46 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
         payment.mlmProcessed = true;
       }
+      await notifyUser({
+        user: booking.customer,
+        sender: admin,
+        title: "Payment Approved",
+        message: `Your payment of ₹${payment.amount} has been approved.`,
+        type: "payment",
+        referenceId: payment._id,
+        referenceModel: "Payment",
+      });
+
+      await notifyUser({
+        user: booking.agent,
+        sender: admin,
+        title: "Payment Approved",
+        message: "A customer payment has been approved.",
+        type: "payment",
+        referenceId: payment._id,
+        referenceModel: "Payment",
+      });
     } else if (action === "reject") {
       payment.status = "rejected";
+      await notifyUser({
+        user: booking.customer,
+        sender: admin,
+        title: "Payment Rejected",
+        message: `Your payment of ₹${payment.amount} has been rejected.`,
+        type: "payment",
+        referenceId: payment._id,
+        referenceModel: "Payment",
+      });
+
+      await notifyUser({
+        user: booking.agent,
+        sender: admin,
+        title: "Payment Rejected",
+        message: "A customer payment has been rejected.",
+        type: "payment",
+        referenceId: payment._id,
+        referenceModel: "Payment",
+      });
     } else {
       return res.status(400).json({
         message: "Invalid action",
@@ -423,6 +522,82 @@ router.delete("/delete/:id", fetchuser, async (req, res) => {
     res.json({ message: "Payment deleted" });
   } catch (error) {
     res.status(500).send("Server Error");
+  }
+});
+
+// =======================================
+// DOWNLOAD RECEIPT
+// =======================================
+
+router.get("/receipt/:id", fetchuser, async (req, res) => {
+  try {
+    const payment = await Payment.findById(req.params.id)
+      .populate("customer")
+      .populate("agent")
+      .populate("booking")
+      .populate({
+        path: "hold",
+        populate: [
+          {
+            path: "customer",
+          },
+          {
+            path: "agent",
+          },
+          {
+            path: "colony",
+          },
+        ],
+      });
+
+    if (!payment) {
+      return res.status(404).json({
+        message: "Payment not found",
+      });
+    }
+
+    let booking = null;
+    let customer = null;
+    let colony = null;
+    let plot = null;
+
+    //-----------------------------------------------------
+    // BOOKING PAYMENT
+    //-----------------------------------------------------
+
+    if (payment.booking) {
+      booking = await Booking.findById(payment.booking._id);
+      customer = payment.customer;
+      colony = await Colony.findById(booking.colony);
+      plot = colony.layout.plots.id(booking.plot);
+    }
+
+    //-----------------------------------------------------
+    // HOLD PAYMENT
+    //-----------------------------------------------------
+    else if (payment.hold) {
+      customer = payment.hold.customer;
+      colony = await Colony.findById(payment.hold.colony);
+      plot = colony.layout.plots.id(payment.hold.plotId);
+      booking = {
+        finalAmount: plot.price * plot.area,
+        pricePerSqft: plot.price,
+      };
+    }
+
+    if (!colony || !plot) {
+      return res.status(404).json({
+        message: "Plot not found",
+      });
+    }
+
+    await generateReceipt(res, payment, booking, customer, colony, plot);
+  } catch (err) {
+    console.log(err);
+
+    res.status(500).json({
+      message: "Server Error",
+    });
   }
 });
 

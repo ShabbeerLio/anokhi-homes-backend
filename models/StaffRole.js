@@ -1,35 +1,31 @@
 const mongoose = require("mongoose");
 
-const modulePermissionSchema = new mongoose.Schema({
-  view: Boolean,
-  add: Boolean,
-  edit: Boolean,
-  delete: Boolean,
-  assign: Boolean,
-  approve: Boolean
-}, { _id: false });
+const StaffRoleSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
 
-const permissionSchema = new mongoose.Schema({
+    slug: {
+      type: String,
+      required: true,
+    },
 
-  leads: modulePermissionSchema,
-  projects: modulePermissionSchema,
-  bookings: modulePermissionSchema,
-  payments: modulePermissionSchema,
-  siteVisits: modulePermissionSchema,
-  customers: modulePermissionSchema,
-  invoices: modulePermissionSchema
+    permissions: [
+      {
+        type: String,
+      },
+    ],
 
-}, { _id: false });
-
-const staffRoleSchema = new mongoose.Schema({
-
-  roleName: {
-    type: String,
-    unique: true
+    isDefault: {
+      type: Boolean,
+      default: false,
+    },
   },
+  {
+    timestamps: true,
+  }
+);
 
-  permissions: permissionSchema
-
-});
-
-module.exports = mongoose.model("StaffRole", staffRoleSchema);
+module.exports = mongoose.model("StaffRole", StaffRoleSchema);

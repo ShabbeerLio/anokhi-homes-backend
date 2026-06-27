@@ -50,7 +50,14 @@ const colonySchema = new mongoose.Schema(
 
           plotType: {
             type: String,
-            enum: ["FOR_SALE", "SOLD", "PENDING", "ROAD", "NOT_FOR_SALE"],
+            enum: [
+              "FOR_SALE",
+              "HOLD",
+              "SOLD",
+              "PENDING",
+              "ROAD",
+              "NOT_FOR_SALE",
+            ],
             default: "FOR_SALE",
           },
 
