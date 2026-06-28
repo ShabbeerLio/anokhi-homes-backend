@@ -132,7 +132,7 @@ router.post("/add", fetchuser, async (req, res) => {
     await notifyAdmins({
       sender: loggedUser._id,
       title: "Lead Converted",
-      message: `${visit.customer} has been converted into a Site Visit.`,
+      message: `${loggedUser.name} has converted lead into a Site Visit.`,
       type: "lead",
       referenceId: req.body.lead,
       referenceModel: "Lead",

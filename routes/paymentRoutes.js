@@ -202,7 +202,7 @@ router.post("/add", fetchuser, async (req, res) => {
       }
     }
     await notifyAdmins({
-      sender: createdBy,
+      sender: user._id,
       title: "Payment Submitted",
       message: `₹${amount} payment submitted for booking.`,
       type: "payment",
@@ -212,7 +212,7 @@ router.post("/add", fetchuser, async (req, res) => {
 
     await notifyUser({
       user: booking.customer,
-      sender: createdBy,
+      sender: user._id,
       title: "Payment Submitted",
       message: `₹${amount} payment has been received and is awaiting approval.`,
       type: "payment",
@@ -419,7 +419,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       }
       await notifyUser({
         user: booking.customer,
-        sender: admin,
+        sender: user._id,
         title: "Payment Approved",
         message: `Your payment of ₹${payment.amount} has been approved.`,
         type: "payment",
@@ -429,7 +429,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
       await notifyUser({
         user: booking.agent,
-        sender: admin,
+        sender: user._id,
         title: "Payment Approved",
         message: "A customer payment has been approved.",
         type: "payment",
@@ -440,7 +440,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       payment.status = "rejected";
       await notifyUser({
         user: booking.customer,
-        sender: admin,
+        sender: user._id,
         title: "Payment Rejected",
         message: `Your payment of ₹${payment.amount} has been rejected.`,
         type: "payment",
@@ -450,7 +450,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
       await notifyUser({
         user: booking.agent,
-        sender: admin,
+        sender: user._id,
         title: "Payment Rejected",
         message: "A customer payment has been rejected.",
         type: "payment",

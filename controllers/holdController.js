@@ -3,6 +3,7 @@ const HoldSetting = require("../models/HoldSetting");
 const Colony = require("../models/Colony");
 const User = require("../models/User");
 const generateReceiptNo = require("../utils/generateReceiptNo");
+const { notifyAdmins, notifyUser } = require("../utils/notify");
 
 exports.freeHold = async (req, res) => {
   try {
@@ -55,6 +56,17 @@ exports.freeHold = async (req, res) => {
       expiresAt,
     });
 
+    const agentData = await User.findById(agent);
+    const customerData = await User.findById(customer);
+
+    await notifyAdmins({
+      sender: agent,
+      title: "New Free Plot Hold",
+      message: `${agentData.name} has requested a FREE hold for Plot ${plot.plotNumber || plotId} in ${colonyData.name}.`,
+      type: "plot_hold",
+      referenceId: hold._id,
+      referenceModel: "PlotHold",
+    });
     const colonyData = await Colony.findById(colony);
     const plot = colonyData.layout.plots.id(plotId);
 
@@ -108,6 +120,20 @@ exports.paidHold = async (req, res) => {
       holdType: "PAID",
       amount: setting.paidAmount,
       status: "APPROVAL",
+    });
+
+    const colonyData = await Colony.findById(colony);
+    const plot = colonyData.layout.plots.id(plotId);
+
+    const agentData = await User.findById(agent);
+
+    await notifyAdmins({
+      sender: agent,
+      title: "New Paid Plot Hold",
+      message: `${agentData.name} has requested a PAID hold for Plot ${plot.plotNumber || plotId}. Approval required.`,
+      type: "plot_hold",
+      referenceId: hold._id,
+      referenceModel: "PlotHold",
     });
 
     const colonyData = await Colony.findById(colony);
@@ -286,6 +312,15 @@ exports.holdAction = async (req, res) => {
         );
         hold.expiresAt = expires;
         plot.plotType = "HOLD";
+        await notifyUser({
+          user: hold.agent,
+          sender: admin._id,
+          title: "Plot Hold Approved",
+          message: `Your ${hold.holdType} hold request has been approved.`,
+          type: "plot_hold",
+          referenceId: hold._id,
+          referenceModel: "PlotHold",
+        });
         break;
       }
 
@@ -295,6 +330,15 @@ exports.holdAction = async (req, res) => {
         hold.approvedAt = new Date();
         hold.remarks = remarks || "";
         plot.plotType = "FOR_SALE";
+        await notifyUser({
+          user: hold.agent,
+          sender: admin._id,
+          title: "Plot Hold Rejected",
+          message: `Your plot hold request has been rejected.`,
+          type: "plot_hold",
+          referenceId: hold._id,
+          referenceModel: "PlotHold",
+        });
         break;
       }
 
@@ -303,6 +347,15 @@ exports.holdAction = async (req, res) => {
         hold.releasedAt = new Date();
         hold.remarks = remarks || "";
         plot.plotType = "FOR_SALE";
+        await notifyUser({
+          user: hold.agent,
+          sender: admin._id,
+          title: "Plot Hold Released",
+          message: `Your plot hold has been released.`,
+          type: "plot_hold",
+          referenceId: hold._id,
+          referenceModel: "PlotHold",
+        });
         break;
       }
 
@@ -313,7 +366,6 @@ exports.holdAction = async (req, res) => {
     }
 
     await hold.save();
-
     await colony.save();
 
     res.json({

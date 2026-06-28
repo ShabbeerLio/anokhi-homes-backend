@@ -10,6 +10,7 @@ const Lead = require("../models/Lead");
 const Payment = require("../models/Payment");
 const PlotHold = require("../models/PlotHold");
 const { notifyUser, notifyAdmins } = require("../utils/notify");
+const updateAgentRating = require("../utils/updateAgentRating");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
