@@ -136,8 +136,6 @@ exports.paidHold = async (req, res) => {
       referenceModel: "PlotHold",
     });
 
-    const colonyData = await Colony.findById(colony);
-    const plot = colonyData.layout.plots.id(plotId);
     if (!plot) {
       return res.status(404).json({
         message: "Plot not found",
