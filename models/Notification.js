@@ -36,6 +36,11 @@ const NotificationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    readAt: {
+      type: Date,
+      default: null,
+    },
+
     icon: {
       type: String,
       default: "",

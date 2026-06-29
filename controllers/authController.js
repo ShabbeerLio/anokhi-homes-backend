@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { notifyAdmins } = require("../utils/notify");
 
 /* =================================
    REGISTER
@@ -122,7 +123,14 @@ const register = async (req, res) => {
       }
     }
     await user.save();
-
+    await notifyAdmins({
+      sender: user._id,
+      title: "New User Registration",
+      message: `${user.name} has registered as ${user.role}.`,
+      type: "user_registration",
+      referenceId: user._id,
+      referenceModel: "User",
+    });
     if (role === "agent") {
       const parentUser = await User.findById(user.parent);
 

@@ -10,7 +10,8 @@ require("./utils/royaltydistribution");
 require("./cron/holdExpiryCron");
 require("./cron/ticketExpiryCron");
 require("./cron/payoutCron");
-// require("./cron/releasePayoutCron");
+require("./cron/notificationCron");
+require("./cron/releasePayoutCron");
 
 const express = require("express");
 const cors = require("cors");

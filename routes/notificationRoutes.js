@@ -14,13 +14,29 @@ router.get("/", fetchuser, async (req, res) => {
 });
 
 router.put("/read/:id", fetchuser, async (req, res) => {
-  await Notification.findByIdAndUpdate(req.params.id, {
-    isRead: true,
-  });
+  try {
+    const notification = await Notification.findOne({
+      _id: req.params.id,
+      user: req.user.id,
+    });
 
-  res.json({
-    success: true,
-  });
+    if (!notification) {
+      return res.status(404).json({
+        message: "Notification not found",
+      });
+    }
+
+    notification.isRead = true;
+    notification.readAt = new Date();
+
+    await notification.save();
+
+    res.json({
+      success: true,
+    });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
 });
 
 router.put("/read-all", fetchuser, async (req, res) => {
