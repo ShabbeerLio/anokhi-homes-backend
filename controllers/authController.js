@@ -127,7 +127,7 @@ const register = async (req, res) => {
       sender: user._id,
       title: "New User Registration",
       message: `${user.name} has registered as ${user.role}.`,
-      type: "user_registration",
+      type: "system",
       referenceId: user._id,
       referenceModel: "User",
     });

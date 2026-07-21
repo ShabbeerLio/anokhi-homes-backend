@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const { createPayout } = require("../mlmController/createPayout");
+const Payout = require("../models/Payout");
 
 /*
 Runs everyday at 1:00 AM
@@ -45,7 +46,14 @@ cron.schedule("0 1 * * *", async () => {
       );
 
       releaseDate = new Date(today);
-
+      await Payout.updateMany(
+        {
+          status: "hold",
+        },
+        {
+          status: "payable",
+        },
+      );
       await createPayout(cycleStart, cycleEnd, releaseDate);
 
       console.log("1st Cycle Payout Generated");
@@ -80,7 +88,14 @@ cron.schedule("0 1 * * *", async () => {
       );
 
       releaseDate = new Date(today);
-
+      await Payout.updateMany(
+        {
+          status: "hold",
+        },
+        {
+          status: "payable",
+        },
+      );
       await createPayout(cycleStart, cycleEnd, releaseDate);
 
       console.log("2nd Cycle Payout Generated");

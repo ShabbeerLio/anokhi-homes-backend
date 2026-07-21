@@ -40,6 +40,7 @@ router.put("/", fetchuser, async (req, res) => {
     const {
       tdsPercent,
       adminChargePercent,
+      joiningCharge
     } = req.body;
 
     let setting = await PayoutSetting.findOne();
@@ -48,6 +49,7 @@ router.put("/", fetchuser, async (req, res) => {
       setting = await PayoutSetting.create({
         tdsPercent,
         adminChargePercent,
+        joiningCharge
       });
     } else {
       if (tdsPercent !== undefined) {
@@ -57,6 +59,11 @@ router.put("/", fetchuser, async (req, res) => {
       if (adminChargePercent !== undefined) {
         setting.adminChargePercent = Number(
           adminChargePercent
+        );
+      }
+      if (joiningCharge !== undefined) {
+        setting.joiningCharge = Number(
+          joiningCharge
         );
       }
 

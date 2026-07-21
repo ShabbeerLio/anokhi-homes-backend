@@ -6,6 +6,9 @@ const updateRank = async (userId) => {
     const user = await User.findById(userId);
 
     if (!user) return;
+    if (user.rankType === "manual") {
+      return;
+    }
 
     // ADMIN NEVER CHANGES
     if (user.role === "admin") {

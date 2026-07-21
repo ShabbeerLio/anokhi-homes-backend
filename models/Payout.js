@@ -55,9 +55,11 @@ const payoutSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "hold", // Generated
-        "processing", // Admin started payment
-        "paid", // Payment completed
+        "hold",
+        "payable",
+        "processing",
+        "partial",
+        "paid",
         "rejected",
         "cancelled",
       ],
@@ -77,23 +79,49 @@ const payoutSchema = new mongoose.Schema(
     },
 
     transactionId: String,
-
     chequeNumber: String,
-
     bankName: String,
-
     remarks: String,
-
-    // Receipt / Screenshot
     attachment: String,
-
-    // Who processed payout
     paidBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
 
     paidAt: Date,
+    totalPaid: {
+      type: Number,
+      default: 0,
+    },
+
+    balance: {
+      type: Number,
+      default: 0,
+    },
+
+    releaseDate: Date,
+
+    payments: [
+      {
+        amount: Number,
+
+        paymentMode: {
+          type: String,
+          enum: ["cash", "upi", "bank", "cheque"],
+        },
+
+        transactionId: String,
+
+        attachment: String,
+
+        paidBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+
+        paidAt: Date,
+      },
+    ],
 
     // Wallet transactions included
     transactions: [

@@ -158,6 +158,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "Sales Executive",
     },
+    rankType: {
+      type: String,
+      enum: ["auto", "manual"],
+      default: "auto",
+    },
 
     directIncomePercent: {
       type: Number,

@@ -3,7 +3,7 @@ const router = express.Router();
 const StaffRole = require("../models/StaffRole");
 const fetchUser = require("../middleware/fetchUser");
 
-router.get("/", fetchUser, async (req, res) => {
+router.get("/", async (req, res) => {
   const roles = await StaffRole.find();
   res.json(roles);
 });

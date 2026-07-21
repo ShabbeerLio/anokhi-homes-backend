@@ -8,7 +8,7 @@ exports.createPayout = async (cycleStart, cycleEnd, releaseDate) => {
     const setting = await PayoutSetting.findOne();
     const tdsPercent = setting?.tdsPercent || 2;
     const adminChargePercent = setting?.adminChargePercent || 5;
-    const minimumPayout = setting?.minimumPayout || 500;
+    const minimumPayout = setting?.minimumPayout || 100;
     const transactions = await WalletTransaction.find({
       isSettled: false,
       cycleStart: {
@@ -58,6 +58,8 @@ exports.createPayout = async (cycleStart, cycleEnd, releaseDate) => {
         adminChargePercent,
         adminChargeAmount,
         netAmount,
+        totalPaid: 0,
+        balance: netAmount,
         status: "hold",
         transactions: userData.transactions.map((t) => t._id),
       });

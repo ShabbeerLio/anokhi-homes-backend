@@ -7,27 +7,19 @@ const fetchuser = require("../middleware/fetchUser");
 const Lead = require("../models/Lead");
 const updateAgentRating = require("../utils/updateAgentRating");
 const { notifyUser, notifyAdmins } = require("../utils/notify");
+const getCurrentSiteVisitCounter = require("../utils/getCurrentSiteVisitCounter");
 
 router.get("/", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
-
     let query = {};
-
-    // Admin / Staff → ALL
     if (loggedUser.role === "admin" || loggedUser.role === "staff") {
       query = {};
-    }
-
-    // Agent → only own
-    else if (loggedUser.role === "agent") {
+    } else if (loggedUser.role === "agent") {
       query = { agent: loggedUser._id };
-    }
-    // user → only own
-    else if (loggedUser.role === "user") {
+    } else if (loggedUser.role === "user") {
       query = { customer: loggedUser._id };
     }
-
     const visits = await SiteVisit.find(query)
       .populate("customer", "name phone")
       .populate("agent", "name phone")
@@ -35,7 +27,18 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("colonies.colony", "name")
       .populate("notes.by", "name role");
 
-    res.json(visits);
+    const visitsWithCounter = await Promise.all(
+      visits.map(async (visit) => {
+        const counter = visit.agent
+          ? await getCurrentSiteVisitCounter(visit.agent._id)
+          : 0;
+        return {
+          ...visit.toObject(),
+          siteVisitCounter: counter,
+        };
+      }),
+    );
+    res.json(visitsWithCounter);
   } catch (error) {
     res.status(500).send("Server Error");
   }

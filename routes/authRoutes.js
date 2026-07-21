@@ -10,10 +10,16 @@ const StaffRole = require("../models/StaffRole");
 const distributeLevelIncome = require("../mlmController/distributeLevelIncome");
 const IncomeHistory = require("../models/IncomeHistory");
 const getTeamTree = require("../utils/getTeamTree");
+const { sendOtp } = require("../controllers/sendOtp");
+const { verifyOtp } = require("../controllers/verifyOtp");
 
 /* AUTH */
 router.post("/login", login);
 router.post("/register", register);
+
+
+router.post("/send-otp", sendOtp);
+router.post("/verify-otp", verifyOtp);
 router.post("/create-user", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
@@ -663,6 +669,8 @@ router.put("/update-rank/:id", fetchuser, async (req, res) => {
     user.level = rank.level;
     user.designation = rank.designation;
     user.directIncomePercent = rank.directIncome;
+
+    user.rankType = "manual";
 
     await user.save();
 
