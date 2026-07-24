@@ -11,7 +11,7 @@ module.exports = [
   {
     level: 2,
     designation: "Senior Sales Executive",
-    min: 1000000,
+    min: 1000001,
     max: 2000000, // 20 Lakh
     directIncome: 6,
   },
@@ -19,71 +19,71 @@ module.exports = [
   {
     level: 3,
     designation: "Team Leader",
-    min: 2000000,
-    max: 7000000, // 70 Lakh
+    min: 2000001,
+    max: 6000000, // 60 Lakh
     directIncome: 7,
   },
 
   {
     level: 4,
     designation: "Senior Team Leader",
-    min: 7000000,
-    max: 15000000, // 1.5 Cr
+    min: 6000001,
+    max: 10000000, // 1 Cr
     directIncome: 8,
   },
 
   {
     level: 5,
     designation: "Assistant Manager",
-    min: 15000000,
-    max: 30000000, // 3 Cr
+    min: 10000001,
+    max: 15000000, // 1.5 Cr
     directIncome: 9,
   },
 
   {
     level: 6,
     designation: "Sales Manager",
-    min: 30000000,
-    max: 50000000, // 5 Cr
+    min: 15000001,
+    max: 25000000, // 2.5 Cr
     directIncome: 10,
   },
 
   {
     level: 7,
     designation: "Senior Sales Manager",
-    min: 50000000,
-    max: 75000000, // 7.5 Cr
+    min: 25000001,
+    max: 50000000, // 5 Cr
     directIncome: 11,
   },
 
   {
     level: 8,
     designation: "Assistant General Manager (AGM)",
-    min: 75000000,
-    max: 100000000, // 10 Cr
+    min: 50000001,
+    max: 80000000, // 8 Cr
     directIncome: 12,
   },
 
   {
     level: 9,
     designation: "General Manager (GM)",
-    min: 100000000,
-    max: 130000000, // 13 Cr
+    min: 80000001,
+    max: 110000000, // 11 Cr
     directIncome: 13,
   },
 
   {
     level: 10,
     designation: "Assistant Vice President (AVP)",
-    min: 130000000,
-    max: 170000000, // 17 Cr
+    min: 110000001,
+    max: 150000000, // 15 Cr
     directIncome: 14,
   },
 
   {
     level: 11,
     designation: "Vice President (VP)",
-    min: 170000000,
+    min: 150000001,
     max: 200000000, // 20 Cr
     directIncome: 15,
   },
@@ -91,7 +91,7 @@ module.exports = [
   {
     level: 12,
     designation: "Senior Vice President (SVP)",
-    min: 200000000,
+    min: 200000001,
     max: 250000000, // 25 Cr
     directIncome: 16,
   },
@@ -99,7 +99,7 @@ module.exports = [
   {
     level: 13,
     designation: "Associate Director",
-    min: 250000000,
+    min: 250000001,
     max: 300000000, // 30 Cr
     directIncome: 17,
   },
@@ -107,24 +107,24 @@ module.exports = [
   {
     level: 14,
     designation: "Deputy Director",
-    min: 300000000,
-    max: 350000000, // 35 Cr
+    min: 300000001,
+    max: 400000000, // 40 Cr
     directIncome: 18,
   },
 
   {
     level: 15,
     designation: "Director",
-    min: 350000000,
-    max: 400000000, // 40 Cr
+    min: 400000001,
+    max: 550000000, // 55 Cr
     directIncome: 19,
   },
 
   {
     level: 16,
     designation: "Executive Director",
-    min: 400000000,
-    max: Infinity, // 40 Cr+
+    min: 550000001,
+    max: Infinity, // 75 Cr+
     directIncome: 20,
   },
 
