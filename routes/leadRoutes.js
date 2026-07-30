@@ -324,7 +324,7 @@ router.put("/assign/:id", fetchuser, async (req, res) => {
         status: "assigned",
         assignedAt: new Date(),
         assignedBy: admin._id,
-        isAccepted: false, // 🔥 important
+        isAccepted: true, // 🔥 important
       },
       { new: true },
     );

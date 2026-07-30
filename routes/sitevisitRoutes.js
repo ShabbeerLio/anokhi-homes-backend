@@ -140,7 +140,6 @@ router.post("/add", fetchuser, async (req, res) => {
       referenceId: req.body.lead,
       referenceModel: "Lead",
     });
-
     res.json(visit);
   } catch (error) {
     console.log(error);

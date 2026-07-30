@@ -202,13 +202,15 @@ router.post("/add", fetchuser, async (req, res) => {
     };
 
     // 🔥 ROLE LOGIC
+    // ROLE LOGIC
     if (user.role === "admin" || user.role === "staff") {
       data.agent = req.body.agent;
-      data.status = "pending";
     } else {
       data.agent = user._id;
-      data.status = "approval";
     }
+
+    // Booking is immediately active
+    data.status = "pending";
     // 🔥 CREATE BOOKING
     const booking = await Booking.create(data);
     const agent = await User.findById(booking.agent);
@@ -346,6 +348,7 @@ router.post("/add", fetchuser, async (req, res) => {
         },
       },
     });
+    res.json(booking);
   } catch (error) {
     console.log(error);
     res.status(500).send("Server Error");
@@ -842,14 +845,12 @@ router.get("/timeline/:bookingId", fetchuser, async (req, res) => {
 
       // BOOKING
       booking_requested: 10,
-      booking_approved: 11,
-      booking_rejected: 12,
 
       // PAYMENTS
-      payment_added: 13,
-      payment_approved: 14,
-      payment_rejected: 15,
-      booking_confirmed: 16,
+      payment_added: 11,
+      payment_approved: 12,
+      payment_rejected: 13,
+      booking_confirmed: 14,
     };
 
     timeline.sort((a, b) => {
