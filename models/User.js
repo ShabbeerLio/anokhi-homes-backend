@@ -2,16 +2,23 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-    name: String,
+    name: {
+      type: String,
+      required: true,
+    },
 
     email: {
       type: String,
+      required: true,
       unique: true,
     },
 
     phone: String,
 
-    password: String,
+    password: {
+      type: String,
+      required: true,
+    },
 
     role: {
       type: String,
@@ -296,7 +303,7 @@ userSchema.pre("save", async function () {
     while (!isUnique) {
       const random = Math.floor(100000 + Math.random() * 900000);
 
-      const referralCode = `PAH${random}`;
+      const referralCode = `AH${random}`;
 
       const existingUser = await mongoose
 
