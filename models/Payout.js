@@ -2,138 +2,51 @@ const mongoose = require("mongoose");
 
 const payoutSchema = new mongoose.Schema(
   {
-    // Receiver
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
-    // Cycle
-    cycleStart: {
-      type: Date,
-      required: true,
-    },
+    cycleStart: { type: Date, required: true },
+    cycleEnd: { type: Date, required: true },
 
-    cycleEnd: {
-      type: Date,
-      required: true,
-    },
+    directIncome: { type: Number, default: 0 },
+    differenceIncome: { type: Number, default: 0 },
+    matchingIncome: { type: Number, default: 0 },
+    royaltyIncome: { type: Number, default: 0 },
+    cashbackIncome: { type: Number, default: 0 },
+    bestPerformanceIncome: { type: Number, default: 0 },
+    festivalBonusIncome: { type: Number, default: 0 },
+    referralIncome: { type: Number, default: 0 },
+    rewardIncome: { type: Number, default: 0 },
 
-    // Amounts
-    grossAmount: {
-      type: Number,
-      default: 0,
-    },
+    grossAmount: { type: Number, default: 0 }, // "Total Income"
 
-    tdsPercent: {
-      type: Number,
-      default: 0,
-    },
+    tdsPercent: { type: Number, default: 5 },
+    tdsAmount: { type: Number, default: 0 },
 
-    tdsAmount: {
-      type: Number,
-      default: 0,
-    },
+    adminChargePercent: { type: Number, default: 2 },
+    adminChargeAmount: { type: Number, default: 0 },
 
-    adminChargePercent: {
-      type: Number,
-      default: 0,
-    },
+    netAmount: { type: Number, default: 0 }, // "Payout Amount"
 
-    adminChargeAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    netAmount: {
-      type: Number,
-      default: 0,
-    },
-
-    // Payout Status
     status: {
       type: String,
-      enum: [
-        "hold",
-        "payable",
-        "processing",
-        "partial",
-        "paid",
-        "rejected",
-        "cancelled",
-      ],
-      default: "hold",
+      enum: ["released", "paid", "cancelled"],
+      default: "released",
     },
-
-    // Payment Details
     paymentMode: {
       type: String,
       enum: ["cash", "upi", "bank", "cheque"],
     },
-
-    paymentType: {
-      type: String,
-      enum: ["full", "partial"],
-      default: "full",
-    },
-
     transactionId: String,
-    chequeNumber: String,
-    bankName: String,
-    remarks: String,
+
     attachment: String,
-    paidBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
 
     paidAt: Date,
-    totalPaid: {
-      type: Number,
-      default: 0,
-    },
-
-    balance: {
-      type: Number,
-      default: 0,
-    },
-
-    releaseDate: Date,
-
-    payments: [
-      {
-        amount: Number,
-
-        paymentMode: {
-          type: String,
-          enum: ["cash", "upi", "bank", "cheque"],
-        },
-
-        transactionId: String,
-
-        attachment: String,
-
-        paidBy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-        },
-
-        paidAt: Date,
-      },
-    ],
-
-    // Wallet transactions included
-    transactions: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "WalletTransaction",
-      },
-    ],
+    paidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    remark: String,
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
+
+payoutSchema.index({ user: 1, cycleStart: 1, cycleEnd: 1 }, { unique: true });
 
 module.exports = mongoose.model("Payout", payoutSchema);

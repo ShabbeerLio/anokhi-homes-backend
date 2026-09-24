@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const fetchuser = require("../middleware/fetchUser");
+const Payment = require("../models/Payment");
 
 const User = require("../models/User");
 const IncomeHistory = require("../models/IncomeHistory");
@@ -9,6 +10,10 @@ const WalletTransaction = require("../models/WalletTransaction");
 const rankSlabs = require("../utils/rankSlabs");
 const Payout = require("../models/Payout");
 const UserReward = require("../models/UserReward");
+const PayoutSetting = require("../models/PayoutSetting");
+const getPayoutCycle = require("../utils/getPayoutCycle");
+const getCurrentInProgressCycle = require("../utils/getCurrentInProgressCycle");
+const getSixMonthCycle = require("../utils/getSixMonthCycle");
 
 /* =================================
    WALLET HISTORY
@@ -246,6 +251,9 @@ router.get("/dashboard", fetchuser, async (req, res) => {
 
 router.get("/commission/summary", fetchuser, async (req, res) => {
   try {
+    const setting = await PayoutSetting.findOne();
+    const tdsPercent = setting?.tdsPercent || 2;
+    const adminChargePercent = setting?.adminChargePercent || 5;
     const loggedUser = await User.findById(req.user.id);
     let users = [];
 
@@ -255,7 +263,7 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
 
     if (loggedUser.role === "admin") {
       users = await User.find({
-        role: "agent",
+        role: { $in: ["admin", "agent"] },
       }).select(`
         name
         email
@@ -279,6 +287,7 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         averageRating
         totalRatings
         badge
+        role
       `);
     }
 
@@ -315,6 +324,7 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         averageRating
         totalRatings
         badge
+        role
       `);
     }
 
@@ -327,6 +337,54 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
       });
     }
 
+    //------------------------------------------------------
+    // Cycle windows — computed once, shared across all users
+    //------------------------------------------------------
+
+    const { cycleStart, cycleEnd } = getCurrentInProgressCycle(new Date());
+    const { cycleStart: smStart, cycleEnd: smEnd } = getSixMonthCycle(
+      new Date(),
+    );
+
+    const REGULAR_CYCLE_TYPES = [
+      "direct_income",
+      "difference_income",
+      "cashback_income",
+      "referal_income",
+      "reward_income",
+    ];
+
+    const SIX_MONTH_CYCLE_TYPES = ["matching_income", "royalty_income"];
+
+    //------------------------------------------------------
+    // Best Performer — current cycle, computed ONCE, not per user
+    //------------------------------------------------------
+
+    const cycleBusinessAgg = await Payment.aggregate([
+      {
+        $match: {
+          status: "approved",
+          paymentDate: { $gte: cycleStart, $lte: cycleEnd },
+          agent: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: "$agent",
+          totalBusiness: { $sum: "$amount" },
+        },
+      },
+      { $sort: { totalBusiness: -1 } },
+      { $limit: 1 },
+    ]);
+
+    const topAgentId = cycleBusinessAgg[0]?._id?.toString() || null;
+    const topAgentBusiness = cycleBusinessAgg[0]?.totalBusiness || 0;
+
+    const cycleBusinessMap = new Map(
+      cycleBusinessAgg.map((a) => [a._id.toString(), a.totalBusiness]),
+    );
+
     //-----------------------------------
     // SUMMARY
     //-----------------------------------
@@ -334,14 +392,27 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
     const summary = await Promise.all(
       users.map(async (user) => {
         //-----------------------------------
-        // Income History
+        // Income History — scoped to this cycle only
         //-----------------------------------
 
         const histories = await IncomeHistory.find({
           user: user._id,
-        }).sort({
-          createdAt: -1,
-        });
+          $or: [
+            {
+              type: { $in: REGULAR_CYCLE_TYPES },
+              createdAt: { $gte: cycleStart, $lte: cycleEnd },
+            },
+            {
+              type: { $in: SIX_MONTH_CYCLE_TYPES },
+              createdAt: { $gte: smStart, $lte: smEnd },
+            },
+            {
+              type: {
+                $nin: [...REGULAR_CYCLE_TYPES, ...SIX_MONTH_CYCLE_TYPES],
+              },
+            },
+          ],
+        }).sort({ createdAt: -1 });
 
         //-----------------------------------
         // Payouts
@@ -362,7 +433,7 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         }).populate("reward");
 
         //------------------------------------------------------
-        // Income Calculations
+        // Income Calculations (all now cycle-scoped via the query above)
         //------------------------------------------------------
 
         const directIncome = histories
@@ -381,10 +452,6 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           .filter((i) => i.type === "referal_income")
           .reduce((sum, i) => sum + i.amount, 0);
 
-        const rewardIncome = histories
-          .filter((i) => i.type === "reward_income")
-          .reduce((sum, i) => sum + i.amount, 0);
-
         const royaltyIncome = histories
           .filter((i) => i.type === "royalty_income")
           .reduce((sum, i) => sum + i.amount, 0);
@@ -393,9 +460,14 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           .filter((i) => i.type === "cashback_income")
           .reduce((sum, i) => sum + i.amount, 0);
 
-        const bestPerformanceIncome = histories
-          .filter((i) => i.type === "best_performance_income")
-          .reduce((sum, i) => sum + i.amount, 0);
+        //------------------------------------------------------
+        // Best Performer share for this user, this cycle
+        //------------------------------------------------------
+
+        const bestPerformanceIncome =
+          topAgentId && user._id.toString() === topAgentId
+            ? topAgentBusiness * 0.01
+            : 0;
 
         //------------------------------------------------------
         // Total Income
@@ -406,7 +478,6 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           differenceIncome +
           matchingIncome +
           referralIncome +
-          rewardIncome +
           royaltyIncome +
           cashbackIncome +
           bestPerformanceIncome;
@@ -442,6 +513,12 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           walletHold: user.walletHold,
           totalIncome: user.totalIncome,
         };
+
+        const tdsAmount = (totalCommission * tdsPercent) / 100;
+        const adminChargeAmount =
+          (totalCommission * adminChargePercent) / 100;
+        const payableAmount =
+          totalCommission - tdsAmount - adminChargeAmount;
 
         //------------------------------------------------------
         // Business Summary
@@ -498,7 +575,7 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           directIncomePercent: user.directIncomePercent,
           currentRate: currentSlab.directIncome,
           nextDesignation: nextSlab?.designation || null,
-          nextTarget: nextSlab?.min || null,
+          nextTarget: currentSlab?.max || null,
           remainingForNextRank: nextSlab ? nextSlab.min - user.selfBusiness : 0,
           progress: Math.round(progress),
         };
@@ -612,13 +689,15 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
           differenceIncome,
           matchingIncome,
           referralIncome,
-          rewardIncome,
           royaltyIncome,
           cashbackIncome,
           bestPerformanceIncome,
           totalCommission,
           pendingCommission,
           creditedCommission,
+          tdsAmount: `${user.role === "admin" ? 0 : tdsAmount}`,
+          adminChargeAmount: `${user.role === "admin" ? 0 : adminChargeAmount}`,
+          payableAmount: `${user.role === "admin" ? creditedCommission : payableAmount}`,
         };
 
         //------------------------------------------------------
@@ -627,6 +706,10 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
 
         return {
           ...user.toObject(),
+          tdsPercent,
+          adminChargePercent,
+          cycleStart,
+          cycleEnd,
           walletSummary,
           businessSummary,
           rankSummary,
@@ -640,6 +723,12 @@ router.get("/commission/summary", fetchuser, async (req, res) => {
         };
       }),
     );
+
+    summary.sort((a, b) => {
+      const aBusiness = cycleBusinessMap.get(a._id.toString()) || 0;
+      const bBusiness = cycleBusinessMap.get(b._id.toString()) || 0;
+      return bBusiness - aBusiness;
+    });
 
     res.json(summary);
   } catch (error) {

@@ -1,13 +1,8 @@
+
 const User = require("../models/User");
 const IncomeHistory = require("../models/IncomeHistory");
-const rankSlabs = require("../utils/rankSlabs");
 const getCurrentCycle = require("../utils/getCurrentCycle");
-
-const getRate = (business) => {
-  const slab = rankSlabs.find((s) => business >= s.min && business < s.max);
-
-  return slab?.directIncome || 0;
-};
+const WalletTransaction = require("../models/WalletTransaction");
 
 const distributeDifferenceIncome = async (
   agentId,
@@ -21,13 +16,14 @@ const distributeDifferenceIncome = async (
     while (parentId) {
       const parent = await User.findById(parentId);
       if (!parent) break;
-      const childRate = getRate(child.selfBusiness);
-      const parentRate = getRate(parent.selfBusiness);
+
+      const childRate = child.directIncomePercent || 0;
+      const parentRate = parent.directIncomePercent || 0;
       const difference = parentRate - childRate;
+
       if (difference > 0 && parent.status === "active") {
         const income = (businessAmount * difference) / 100;
-        // parent.wallet += income;
-        parent.walletHold += income;
+        parent.wallet += income;
         const { cycleStart, cycleEnd } = getCurrentCycle();
         await WalletTransaction.create({
           user: parent._id,

@@ -8,7 +8,10 @@ const schema = new mongoose.Schema(
     },
 
     amount: Number,
-
+    from: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+    },
     type: {
       type: String,
       enum: ["credit", "debit"],
@@ -17,13 +20,15 @@ const schema = new mongoose.Schema(
     source: {
       type: String,
       enum: [
-        "direct_income",
         "referal_income",
+        "direct_income",
         "difference_income",
         "matching_income",
+        "royalty_income",
+        "reward_income",
+        "cashback_income",
+        "best_performance_income",
         "withdrawal",
-        "reward",
-        "royalty",
       ],
     },
     cycleStart: Date,

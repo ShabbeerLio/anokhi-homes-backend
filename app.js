@@ -9,12 +9,13 @@ require("./utils/checker");
 require("./utils/royaltydistribution");
 require("./cron/holdExpiryCron");
 require("./cron/ticketExpiryCron");
-require("./cron/payoutCron");
 require("./cron/notificationCron");
-// require("./cron/releasePayoutCron");
-
+require("./cron/payoutCron");
+const now = new Date();
 const express = require("express");
 const cors = require("cors");
+const startPayoutCron = require("./cron/payoutCron");
+startPayoutCron();
 
 // Connect to MongoDB
 const app = express();

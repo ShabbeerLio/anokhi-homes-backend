@@ -10,7 +10,7 @@ module.exports = async () => {
     if (last?.receiptNo) {
 
         const lastNo = parseInt(
-            last.receiptNo.replace("AHPL", "")
+            last.receiptNo.replace("PHPL", "")
         );
 
         number = lastNo + 1;

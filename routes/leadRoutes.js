@@ -6,10 +6,11 @@ const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
 const updateAgentRating = require("../utils/updateAgentRating");
 const { notifyUser, notifyAdmins, notifyMany } = require("../utils/notify");
+const Booking = require("../models/Booking");
+const SiteVisit = require("../models/SiteVisit");
 /* =========================
    GET ALL LEADS
 ========================= */
-
 router.get("/", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -74,8 +75,84 @@ router.get("/", fetchuser, async (req, res) => {
         .populate("notes.by", "name role");
     }
 
+    // =========================================
+    // NORMALIZE TO PLAIN OBJECTS
+    // Admin/staff and user branches return Mongoose
+    // documents; the agent branch already returns
+    // plain objects (from .toObject() above). Bring
+    // everything to the same shape before attaching
+    // the extra siteVisit/booking fields below.
+    // =========================================
+
+    leads = leads.map((l) =>
+      typeof l.toObject === "function" ? l.toObject() : l,
+    );
+
+    // =========================================
+    // ATTACH SITE VISIT + BOOKING STAGE PER LEAD
+    // Follows the real chain: SiteVisit.lead -> Lead,
+    // Booking.sitevisitId -> SiteVisit. A lead can have
+    // more than one site visit (rescheduled etc.), so
+    // the latest one is used; same for booking.
+    // =========================================
+
+    const leadIds = leads.map((l) => l._id);
+
+    const siteVisits = await SiteVisit.find({
+      lead: { $in: leadIds },
+    })
+      .select("lead status createdAt")
+      .sort({ createdAt: -1 });
+
+    const siteVisitByLead = {};
+    for (const sv of siteVisits) {
+      const key = sv.lead.toString();
+      if (!siteVisitByLead[key]) {
+        siteVisitByLead[key] = sv;
+      }
+    }
+
+    const siteVisitIds = Object.values(siteVisitByLead).map((sv) => sv._id);
+
+    const bookings = await Booking.find({
+      sitevisitId: { $in: siteVisitIds },
+    })
+      .select("sitevisitId status createdAt")
+      .sort({ createdAt: -1 });
+
+    const bookingBySiteVisit = {};
+    for (const b of bookings) {
+      const key = b.sitevisitId.toString();
+      if (!bookingBySiteVisit[key]) {
+        bookingBySiteVisit[key] = b;
+      }
+    }
+
+    leads = leads.map((lead) => {
+      const leadKey = lead._id.toString();
+      const siteVisit = siteVisitByLead[leadKey] || null;
+
+      let booking = null;
+      if (siteVisit) {
+        booking = bookingBySiteVisit[siteVisit._id.toString()] || null;
+      }
+
+      let currentStep;
+
+      if (booking) {
+        currentStep = { step: "booking", status: booking.status };
+      } else if (siteVisit) {
+        currentStep = { step: "siteVisit", status: siteVisit.status };
+      } else {
+        currentStep = { step: "lead", status: lead.status };
+      }
+
+      return { ...lead, currentStep };
+    });
+
     res.json(leads);
   } catch (err) {
+    console.log(err);
     res.status(500).send("Server Error");
   }
 });

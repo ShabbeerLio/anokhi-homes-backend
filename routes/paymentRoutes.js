@@ -6,16 +6,19 @@ const User = require("../models/User");
 const Booking = require("../models/Booking");
 const fetchuser = require("../middleware/fetchUser");
 const Colony = require("../models/Colony");
-const distributeDirectIncome = require("../mlmController/distributeDirectIncome");
-const updateBusinessTree = require("../mlmController/updateBusinessTree");
-const distributeDifferenceIncome = require("../mlmController/distributeDifferenceIncome");
 const WalletTransaction = require("../models/WalletTransaction");
+const updateBusinessTree = require("../mlmController/updateBusinessTree");
+const distributeDirectIncome = require("../mlmController/distributeDirectIncome");
+const distributeDifferenceIncome = require("../mlmController/distributeDifferenceIncome");
 const distributeMatchingIncome = require("../mlmController/distributeMatchingIncome");
+const distributeCashbackIncome = require("../mlmController/distributeCashbackIncome");
 const Withdrawal = require("../models/Withdrawal");
 const checkRewards = require("../mlmController/checkRewards");
 const generateReceiptNo = require("../utils/generateReceiptNo");
 const generateReceipt = require("../utils/generateReceipt");
 const { notifyUser, notifyAdmins } = require("../utils/notify");
+const { formatCurrency } = require("../utils/formatCurrency");
+const getDownlineIds = require("../utils/getDownlineIds");
 
 // =========================
 // GET ALL PAYMENTS
@@ -29,7 +32,8 @@ router.get("/", fetchuser, async (req, res) => {
     if (user.role === "admin" || user.role === "staff") {
       query = {};
     } else if (user.role === "agent") {
-      query = { agent: user._id };
+      const downlineIds = await getDownlineIds(user._id);
+      query = { agent: { $in: [user._id, ...downlineIds] } };
     } else {
       query = { customer: user._id };
     }
@@ -162,7 +166,7 @@ router.post("/add", fetchuser, async (req, res) => {
       // ✅ 3. AUTO CONFIRM BOOKING
       if (bookingDoc.amountPaid >= bookingDoc.finalAmount) {
         bookingDoc.status = "confirmed";
-
+        await distributeCashbackIncome(bookingData._id, bookingData.agent);
         const colony = await Colony.findById(bookingDoc.colony);
 
         if (colony) {
@@ -195,7 +199,7 @@ router.post("/add", fetchuser, async (req, res) => {
         );
 
         await distributeMatchingIncome(bookingData.agent);
-        await checkRewards(bookingData.agent);
+        // await distributeRoyaltyIncome(bookingData._id, bookingData.agent);
 
         payment.mlmProcessed = true;
         await payment.save();
@@ -204,7 +208,7 @@ router.post("/add", fetchuser, async (req, res) => {
     await notifyAdmins({
       sender: user._id,
       title: "Payment Submitted",
-      message: `₹${amount} payment submitted for booking.`,
+      message: `₹${formatCurrency(amount)} payment submitted for booking.`,
       type: "payment",
       referenceId: payment._id,
       referenceModel: "Payment",
@@ -214,7 +218,7 @@ router.post("/add", fetchuser, async (req, res) => {
       user: booking.customer,
       sender: user._id,
       title: "Payment Submitted",
-      message: `₹${amount} payment has been received and is awaiting approval.`,
+      message: `₹${formatCurrency(amount)} payment has been received and is awaiting approval.`,
       type: "payment",
       referenceId: payment._id,
       referenceModel: "Payment",
@@ -345,6 +349,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
 
       if (booking.amountPaid >= booking.finalAmount) {
         booking.status = "confirmed";
+        await distributeCashbackIncome(bookingData._id, bookingData.agent);
         await notifyAdmins({
           sender: booking.agent,
           title: "Booking Confirmed",
@@ -413,7 +418,8 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         );
 
         await distributeMatchingIncome(booking.agent);
-        await checkRewards(booking.agent);
+        // await distributeRoyaltyIncome(booking._id, booking.agent);
+        // await checkRewards(booking.agent);
 
         payment.mlmProcessed = true;
       }
@@ -421,7 +427,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         user: booking.customer,
         sender: user._id,
         title: "Payment Approved",
-        message: `Your payment of ₹${payment.amount} has been approved.`,
+        message: `Your payment of ₹${formatCurrency(payment.amount)} has been approved.`,
         type: "payment",
         referenceId: payment._id,
         referenceModel: "Payment",
@@ -442,7 +448,7 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         user: booking.customer,
         sender: user._id,
         title: "Payment Rejected",
-        message: `Your payment of ₹${payment.amount} has been rejected.`,
+        message: `Your payment of ₹${formatCurrency(payment.amount)} has been rejected.`,
         type: "payment",
         referenceId: payment._id,
         referenceModel: "Payment",

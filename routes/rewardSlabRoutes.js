@@ -6,6 +6,8 @@ const User = require("../models/User");
 const fetchuser = require("../middleware/fetchUser");
 const UserReward = require("../models/UserReward");
 const IncomeHistory = require("../models/IncomeHistory");
+const getSixMonthCycle = require("../utils/getSixMonthCycle");
+const WalletTransaction = require("../models/WalletTransaction");
 
 /* =========================
    GET ALL REWARDS
@@ -144,25 +146,33 @@ router.put("/claim-cash/:id", fetchuser, async (req, res) => {
       "reward",
     );
 
-    if (!userReward)
-      return res.status(404).json({
-        msg: "Reward not found",
-      });
+    if (!userReward) return res.status(404).json({ msg: "Reward not found" });
+
     if (userReward.user.toString() !== req.user.id) {
-      return res.status(403).json({
-        msg: "Access denied",
-      });
+      return res.status(403).json({ msg: "Access denied" });
     }
 
     if (userReward.status === "claimed") {
-      return res.status(400).json({
-        msg: "Already claimed",
-      });
+      return res.status(400).json({ msg: "Already claimed" });
     }
+
     const user = await User.findById(req.user.id);
-    user.wallet += userReward.reward.rewardCash;
-    user.totalIncome += userReward.reward.rewardCash;
+
+    const cashAmount = userReward.reward.rewardCash;
+
+    user.wallet += cashAmount;
+    user.totalIncome += cashAmount;
     await user.save();
+
+    await WalletTransaction.create({
+      user: user._id,
+      amount: cashAmount,
+      type: "credit",
+      source: "matching_income",
+      remark: "Matching Income (claimed)",
+      isSettled: false,
+    });
+
     userReward.status = "claimed";
     userReward.selectedOption = "cash";
     userReward.claimedAt = new Date();
@@ -173,19 +183,20 @@ router.put("/claim-cash/:id", fetchuser, async (req, res) => {
     }
 
     await userReward.save();
+
     await IncomeHistory.create({
       user: user._id,
-      type: "reward_income",
-      amount: userReward.reward.rewardCash,
-      rewardName: userReward.reward.rewardName,
+      type: "matching_income",
+      amount: cashAmount,
+      businessAmount: userReward.achievedBusiness,
       status: "credited",
+      creditedAt: new Date(),
     });
 
-    res.json({
-      success: true,
-    });
+    res.json({ success: true, cashAmount });
   } catch (error) {
     console.log(error);
+    res.status(500).send("Server Error");
   }
 });
 

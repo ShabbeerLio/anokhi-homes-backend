@@ -24,6 +24,10 @@ const UserRewardSchema = new mongoose.Schema(
       enum: ["cash", "gift", null],
       default: null,
     },
+    pendingAmount: {
+      type: Number,
+      default: 0,
+    },
 
     status: {
       type: String,
@@ -45,10 +49,7 @@ const UserRewardSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-module.exports = mongoose.model(
-  "UserReward",
-  UserRewardSchema
-);
+module.exports = mongoose.model("UserReward", UserRewardSchema);

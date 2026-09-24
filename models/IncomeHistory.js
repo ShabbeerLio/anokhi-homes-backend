@@ -11,6 +11,10 @@ const incomeHistorySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    from: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+    },
 
     payment: {
       type: mongoose.Schema.Types.ObjectId,

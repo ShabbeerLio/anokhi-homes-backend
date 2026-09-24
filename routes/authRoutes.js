@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
-const ranks = require("../utils/rankSlabs");
+const RankSlab = require("../models/RankSlab");
 
 const { login, register } = require("../controllers/authController");
 const fetchuser = require("../middleware/fetchUser");
@@ -12,11 +12,13 @@ const IncomeHistory = require("../models/IncomeHistory");
 const getTeamTree = require("../utils/getTeamTree");
 const { sendOtp } = require("../controllers/sendOtp");
 const { verifyOtp } = require("../controllers/verifyOtp");
+const Lead = require("../models/Lead");
+const SiteVisit = require("../models/SiteVisit");
+const Booking = require("../models/Booking");
 
 /* AUTH */
 router.post("/login", login);
 router.post("/register", register);
-
 
 router.post("/send-otp", sendOtp);
 router.post("/verify-otp", verifyOtp);
@@ -389,6 +391,219 @@ router.get("/all-users", fetchuser, async (req, res) => {
   }
 });
 
+/* =========================================
+   GET CONNECTED CUSTOMERS FOR AGENT
+========================================= */
+
+router.get("/my-connected-users", fetchuser, async (req, res) => {
+  try {
+    const agentId = req.user.id;
+
+    // =========================================
+    // CHECK LOGGED-IN USER
+    // =========================================
+
+    const agent = await User.findById(agentId).select(
+      "_id name role referralId",
+    );
+
+    if (!agent) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+
+    // Only agent can use this route
+    if (agent.role !== "agent") {
+      return res.status(403).json({
+        msg: "Only agents can access connected customers",
+      });
+    }
+
+    // =========================================
+    // GET CUSTOMERS CREATED BY THIS AGENT
+    // =========================================
+
+    const createdUsers = await User.find({
+      role: "user",
+      createdBy: agentId,
+    }).select("_id");
+
+    // =========================================
+    // GET LEADS FOR THIS AGENT, NEWEST FIRST
+    // =========================================
+
+    const leads = await Lead.find({
+      agent: agentId,
+      customer: { $ne: null },
+    })
+      .select("customer status createdAt")
+      .sort({ createdAt: -1 });
+
+    // =========================================
+    // GET SITE VISITS FOR THIS AGENT, NEWEST FIRST
+    // =========================================
+
+    const siteVisits = await SiteVisit.find({
+      agent: agentId,
+      customer: { $ne: null },
+    })
+      .select("customer status createdAt")
+      .sort({ createdAt: -1 });
+
+    // =========================================
+    // GET BOOKINGS FOR THIS AGENT, NEWEST FIRST
+    // =========================================
+
+    const bookings = await Booking.find({
+      agent: agentId,
+      customer: { $ne: null },
+    })
+      .select("customer status createdAt")
+      .sort({ createdAt: -1 });
+
+    // =========================================
+    // COMBINE CUSTOMER IDS
+    // =========================================
+
+    const customerIds = [
+      ...createdUsers.map((user) => user._id),
+      ...leads.map((lead) => lead.customer),
+      ...siteVisits.map((visit) => visit.customer),
+      ...bookings.map((booking) => booking.customer),
+    ];
+
+    // =========================================
+    // REMOVE DUPLICATES
+    // =========================================
+
+    const uniqueCustomerIds = [
+      ...new Set(customerIds.map((id) => id.toString())),
+    ];
+
+    // =========================================
+    // LATEST LEAD / SITE VISIT / BOOKING PER CUSTOMER
+    // Each array is already sorted newest-first, so the FIRST
+    // match found per customer is the latest.
+    // =========================================
+
+    const latestLeadByCustomer = {};
+    for (const lead of leads) {
+      const key = lead.customer.toString();
+      if (!latestLeadByCustomer[key]) {
+        latestLeadByCustomer[key] = {
+          status: lead.status,
+          date: lead.createdAt,
+        };
+      }
+    }
+
+    const latestSiteVisitByCustomer = {};
+    for (const visit of siteVisits) {
+      const key = visit.customer.toString();
+      if (!latestSiteVisitByCustomer[key]) {
+        latestSiteVisitByCustomer[key] = {
+          status: visit.status,
+          date: visit.createdAt,
+        };
+      }
+    }
+
+    const latestBookingByCustomer = {};
+    for (const booking of bookings) {
+      const key = booking.customer.toString();
+      if (!latestBookingByCustomer[key]) {
+        latestBookingByCustomer[key] = {
+          status: booking.status,
+          date: booking.createdAt,
+        };
+      }
+    }
+
+    // =========================================
+    // COLLAPSE INTO ONE "STAGE" PER CUSTOMER
+    // Funnel chain: lead -> site visit -> booking.
+    // A booking implies the earlier stages already
+    // happened, so it takes priority; site visit is
+    // next; lead is the fallback if neither exists.
+    // =========================================
+
+    const stageByCustomer = {};
+
+    for (const key of uniqueCustomerIds) {
+      const booking = latestBookingByCustomer[key];
+      const siteVisit = latestSiteVisitByCustomer[key];
+      const lead = latestLeadByCustomer[key];
+
+      if (booking) {
+        stageByCustomer[key] = {
+          type: "booking",
+          status: booking.status,
+          date: booking.date,
+        };
+      } else if (siteVisit) {
+        stageByCustomer[key] = {
+          type: "site_visit",
+          status: siteVisit.status,
+          date: siteVisit.date,
+        };
+      } else if (lead) {
+        stageByCustomer[key] = {
+          type: "lead",
+          status: lead.status,
+          date: lead.date,
+        };
+      } else {
+        stageByCustomer[key] = null; // customer added directly, no funnel activity yet
+      }
+    }
+
+    // =========================================
+    // GET ONLY USERS
+    // =========================================
+
+    const users = await User.find({
+      _id: {
+        $in: uniqueCustomerIds,
+      },
+      role: "user",
+    })
+      .select("-password")
+      .populate("createdBy", "name referralId designation");
+
+    // =========================================
+    // ATTACH STAGE PER CUSTOMER
+    // =========================================
+
+    const usersWithStage = users.map((user) => {
+      const key = user._id.toString();
+
+      return {
+        ...user.toObject(),
+        stage: stageByCustomer[key] || null,
+      };
+    });
+
+    // =========================================
+    // RESPONSE
+    // =========================================
+
+    return res.json({
+      success: true,
+      count: usersWithStage.length,
+      users: usersWithStage,
+    });
+  } catch (error) {
+    console.error("Get connected customers error:", error);
+
+    return res.status(500).json({
+      msg: "Internal Server Error",
+      error: error.message,
+    });
+  }
+});
+
+
 /* ===========================
    GET USER BY ID
 =========================== */
@@ -562,6 +777,13 @@ router.get("/income-history", fetchuser, async (req, res) => {
       .populate("user", "name email phone referralId designation")
       .populate("fromUser", "name email phone referralId designation")
       .populate({
+        path: "from",
+        select: "colony plot",
+        populate: [
+          { path: "colony", select: "name" },
+        ],
+      })
+      .populate({
         path: "payment",
         select: "customer approvedBy paymentDate amount paymentType",
         populate: [
@@ -624,8 +846,12 @@ router.get("/my-team-tree", fetchuser, async (req, res) => {
 
 router.get("/ranks", fetchuser, async (req, res) => {
   try {
+    const ranks = await RankSlab.find().sort({ level: 1 });
+
     res.json(ranks);
   } catch (err) {
+    console.log(err);
+
     res.status(500).json({
       msg: "Internal Server Error",
     });
@@ -636,6 +862,12 @@ router.put("/update-rank/:id", fetchuser, async (req, res) => {
   try {
     const loggedUser = await User.findById(req.user.id);
 
+    if (!loggedUser) {
+      return res.status(404).json({
+        msg: "Admin not found",
+      });
+    }
+
     if (loggedUser.role !== "admin") {
       return res.status(403).json({
         msg: "Only admin can update designation",
@@ -644,7 +876,12 @@ router.put("/update-rank/:id", fetchuser, async (req, res) => {
 
     const { level } = req.body;
 
-    const rank = ranks.find((r) => r.level === Number(level));
+    // Find rank slab from MongoDB
+    const rank = await RankSlab.findOne({
+      level: Number(level),
+    });
+
+    // console.log("Selected Rank:", rank);
 
     if (!rank) {
       return res.status(400).json({
@@ -652,6 +889,7 @@ router.put("/update-rank/:id", fetchuser, async (req, res) => {
       });
     }
 
+    // Find agent
     const user = await User.findById(req.params.id);
 
     if (!user) {
@@ -666,21 +904,130 @@ router.put("/update-rank/:id", fetchuser, async (req, res) => {
       });
     }
 
+    // Update agent according to RankSlab
     user.level = rank.level;
     user.designation = rank.designation;
     user.directIncomePercent = rank.directIncome;
 
+    // Admin manually assigned this rank
     user.rankType = "manual";
 
     await user.save();
 
-    res.json({
+    return res.json({
+      success: true,
       msg: "Rank updated successfully",
       user,
     });
   } catch (err) {
-    console.log(err);
-    res.status(500).send("Internal Server Error");
+    console.error("Update agent rank error:", err);
+
+    return res.status(500).json({
+      msg: "Internal Server Error",
+      error: err.message,
+    });
+  }
+});
+
+router.put("/update-rank-slab/:level", fetchuser, async (req, res) => {
+  try {
+    const admin = await User.findById(req.user.id);
+
+    if (!admin) {
+      return res.status(404).json({
+        msg: "Admin not found",
+      });
+    }
+
+    if (admin.role !== "admin") {
+      return res.status(403).json({
+        msg: "Only admin can update rank slabs",
+      });
+    }
+
+    const level = Number(req.params.level);
+
+    const { min, max, directIncome, designation } = req.body;
+
+    const rank = await RankSlab.findOne({ level });
+
+    if (!rank) {
+      return res.status(404).json({
+        msg: "Rank slab not found",
+      });
+    }
+
+    // =========================
+    // VALIDATION
+    // =========================
+
+    if (min === undefined || min === null || Number(min) < 0) {
+      return res.status(400).json({
+        msg: "Valid minimum business is required",
+      });
+    }
+
+    if (!designation || !designation.trim()) {
+      return res.status(400).json({
+        msg: "Designation is required",
+      });
+    }
+
+    if (
+      directIncome === undefined ||
+      directIncome === null ||
+      Number(directIncome) < 0 ||
+      Number(directIncome) > 100
+    ) {
+      return res.status(400).json({
+        msg: "Direct income must be between 0 and 100",
+      });
+    }
+
+    // =========================
+    // MAXIMUM
+    // =========================
+
+    if (
+      max !== undefined &&
+      max !== null &&
+      max !== "" &&
+      max !== "Infinity" &&
+      Number(max) <= Number(min)
+    ) {
+      return res.status(400).json({
+        msg: "Maximum business must be greater than minimum business",
+      });
+    }
+
+    // =========================
+    // UPDATE
+    // =========================
+
+    rank.min = Number(min);
+
+    if (max === undefined || max === null || max === "" || max === "Infinity") {
+      rank.max = Infinity;
+    } else {
+      rank.max = Number(max);
+    }
+
+    rank.directIncome = Number(directIncome);
+    rank.designation = designation.trim();
+
+    await rank.save();
+
+    res.json({
+      success: true,
+      msg: "Rank slab updated successfully",
+      rank,
+    });
+  } catch (error) {
+    console.log("Update rank slab error:", error);
+
+    res.status(500).json({
+      msg: "Internal Server Error",
+    });
   }
 });
 

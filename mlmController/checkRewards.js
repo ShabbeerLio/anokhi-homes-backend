@@ -2,7 +2,7 @@ const Reward = require("../models/Reward");
 const UserReward = require("../models/UserReward");
 const User = require("../models/User");
 
-const checkRewards = async (userId) => {
+const checkRewards = async (userId, pendingAmount) => {
   try {
     const user = await User.findById(userId);
 
@@ -17,14 +17,11 @@ const checkRewards = async (userId) => {
     }
 
     for (const reward of rewards) {
-      const alreadyClaimed =
-        user.claimedRewardLevels.includes(reward.level);
+      const alreadyClaimed = user.claimedRewardLevels.includes(reward.level);
 
       if (alreadyClaimed) continue;
 
-      if (
-        user.rewardBusinessAchieved >= reward.targetBusiness
-      ) {
+      if (user.rewardBusinessAchieved >= reward.targetBusiness) {
         const exists = await UserReward.findOne({
           user: user._id,
           reward: reward._id,
@@ -36,6 +33,7 @@ const checkRewards = async (userId) => {
           user: user._id,
           reward: reward._id,
           achievedBusiness: user.rewardBusinessAchieved,
+          pendingAmount,
           status: "unclaimed",
         });
 
