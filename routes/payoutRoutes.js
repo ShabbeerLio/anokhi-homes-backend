@@ -84,27 +84,42 @@ router.get("/:id", fetchuser, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const histories = await IncomeHistory.find({
-      user: payout.user._id,
-    })
-      .populate("fromUser", "name referralId")
-      .populate({
-        path: "payment",
-        select: "receiptNo amount booking hold",
-        populate: [
-          {
-            path: "booking",
-            select: "colony",
-            populate: { path: "colony", select: "name category" },
-          },
-          {
-            path: "hold",
-            select: "colony",
-            populate: { path: "colony", select: "name category" },
-          },
-        ],
-      })
-      .sort({ createdAt: 1 });
+    const populateHistory = (q) =>
+      q
+        .populate("fromUser", "name referralId")
+        .populate({
+          path: "payment",
+          select: "receiptNo amount booking hold",
+          populate: [
+            {
+              path: "booking",
+              select: "colony",
+              populate: { path: "colony", select: "name category" },
+            },
+            {
+              path: "hold",
+              select: "colony",
+              populate: { path: "colony", select: "name category" },
+            },
+          ],
+        })
+        .sort({ createdAt: 1 });
+
+    // Entries linked to THIS payout by generatePayouts
+    let histories = await populateHistory(
+      IncomeHistory.find({ payout: payout._id }),
+    );
+
+    // Fallback for old payouts created before the link existed
+    if (histories.length === 0) {
+      histories = await populateHistory(
+        IncomeHistory.find({
+          user: payout.user._id,
+          payout: null,
+          createdAt: { $gte: payout.cycleStart, $lte: payout.cycleEnd },
+        }),
+      );
+    }
 
     const historiesByType = histories.reduce((acc, h) => {
       if (!acc[h.type]) acc[h.type] = [];
@@ -159,30 +174,39 @@ router.get("/:id", fetchuser, async (req, res) => {
     );
 
     const validCategories = ["Anokhi Homes", "Patliputra"];
-    const needsMigration =
-      !payout.categoryPayments ||
-      payout.categoryPayments.length !== validCategories.length ||
-      payout.categoryPayments.some(
-        (c) => !validCategories.includes(c.category),
-      ) ||
-      payout.categoryPayments.some(
-        (c) => c.grossAmount === 0 && c.status !== "paid",
-      );
+    const existing = payout.categoryPayments || [];
+    const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
-    if (needsMigration) {
+    const needsSync =
+      existing.length !== validCategories.length ||
+      existing.some((c) => !validCategories.includes(c.category)) ||
+      freshBreakdown.some((f) => {
+        const cur = existing.find((c) => c.category === f.category);
+        if (!cur) return true;
+        if (cur.status === "paid") return false; // never rewrite a paid bucket
+        return (
+          r2(cur.grossAmount) !== r2(f.grossAmount) ||
+          r2(cur.netAmount) !== r2(f.netAmount) ||
+          (f.grossAmount === 0 && cur.status !== "paid")
+        );
+      });
+
+    if (needsSync) {
       const previouslyPaid = {};
-      (payout.categoryPayments || []).forEach((c) => {
-        if (c.status === "paid") {
-          const bucket = bucketOf(c.category);
-          previouslyPaid[bucket] = c;
-        }
+      existing.forEach((c) => {
+        if (c.status === "paid") previouslyPaid[bucketOf(c.category)] = c;
       });
 
       payout.categoryPayments = freshBreakdown.map((entry) => {
         const prior = previouslyPaid[entry.category];
         return prior
           ? {
-              ...entry,
+              category: entry.category,
+              // keep the amounts that were actually paid out
+              grossAmount: prior.grossAmount,
+              tdsAmount: prior.tdsAmount,
+              adminChargeAmount: prior.adminChargeAmount,
+              netAmount: prior.netAmount,
               status: "paid",
               paymentMode: prior.paymentMode,
               transactionId: prior.transactionId,
@@ -191,7 +215,7 @@ router.get("/:id", fetchuser, async (req, res) => {
               paidAt: prior.paidAt,
               paidBy: prior.paidBy,
             }
-          : entry; // entry.status is already "paid" here if grossAmount === 0
+          : entry;
       });
 
       await payout.save();
