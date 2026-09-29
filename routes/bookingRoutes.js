@@ -30,7 +30,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate("customer", "name phone")
       .populate("agent", "name phone")
       .populate("location", "name")
-      .populate("colony", "name")
+      .populate("colony", "name category")
       .populate("notes.by", "name role");
 
     const populatePlotData = async (booking) => {

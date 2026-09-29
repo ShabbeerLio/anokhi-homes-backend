@@ -45,7 +45,7 @@ router.get("/", fetchuser, async (req, res) => {
         path: "booking",
         populate: [
           { path: "location", select: "name" },
-          { path: "colony", select: "name layout.plots" },
+          { path: "colony", select: "name category layout.plots" },
           { path: "agent", select: "name phone" },
           { path: "customer", select: "name phone" },
         ],

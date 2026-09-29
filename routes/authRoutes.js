@@ -603,7 +603,6 @@ router.get("/my-connected-users", fetchuser, async (req, res) => {
   }
 });
 
-
 /* ===========================
    GET USER BY ID
 =========================== */
@@ -779,13 +778,11 @@ router.get("/income-history", fetchuser, async (req, res) => {
       .populate({
         path: "from",
         select: "colony plot",
-        populate: [
-          { path: "colony", select: "name" },
-        ],
+        populate: [{ path: "colony", select: "name" }],
       })
       .populate({
         path: "payment",
-        select: "customer approvedBy paymentDate amount paymentType",
+        select: "customer approvedBy paymentDate amount paymentType booking",
         populate: [
           {
             path: "customer",
@@ -798,6 +795,16 @@ router.get("/income-history", fetchuser, async (req, res) => {
           { path: "paymentMode", select: "name" },
           { path: "paymentType", select: "name" },
           { path: "paymentDate", select: "name" },
+          {
+            path: "booking",
+            select: "colony",
+            populate: [
+              {
+                path: "colony",
+                select: "category",
+              },
+            ],
+          },
         ],
       })
       .sort({

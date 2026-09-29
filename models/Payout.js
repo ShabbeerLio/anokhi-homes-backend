@@ -1,5 +1,35 @@
 const mongoose = require("mongoose");
 
+const categoryPaymentSchema = new mongoose.Schema(
+  {
+    category: {
+      type: String,
+      enum: ["Anokhi Homes", "Patliputra"],
+      required: true,
+    },
+    grossAmount: { type: Number, default: 0 },
+    tdsAmount: { type: Number, default: 0 },
+    adminChargeAmount: { type: Number, default: 0 },
+    netAmount: { type: Number, default: 0 },
+
+    status: {
+      type: String,
+      enum: ["pending", "paid"],
+      default: "pending",
+    },
+    paymentMode: {
+      type: String,
+      enum: ["cash", "upi", "bank", "cheque"],
+    },
+    transactionId: String,
+    attachment: String,
+    remark: String,
+    paidAt: Date,
+    paidBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  },
+  { _id: false },
+);
+
 const payoutSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -17,7 +47,7 @@ const payoutSchema = new mongoose.Schema(
     referralIncome: { type: Number, default: 0 },
     rewardIncome: { type: Number, default: 0 },
 
-    grossAmount: { type: Number, default: 0 }, // "Total Income"
+    grossAmount: { type: Number, default: 0 },
 
     tdsPercent: { type: Number, default: 5 },
     tdsAmount: { type: Number, default: 0 },
@@ -25,7 +55,12 @@ const payoutSchema = new mongoose.Schema(
     adminChargePercent: { type: Number, default: 2 },
     adminChargeAmount: { type: Number, default: 0 },
 
-    netAmount: { type: Number, default: 0 }, // "Payout Amount"
+    netAmount: { type: Number, default: 0 },
+
+    // One entry per category ("Anokhi Homes" bucket absorbs "Others"/
+    // uncategorized income; "Patliputra" is its own bucket). Each entry is
+    // paid independently, producing its own transaction/attachment/mode.
+    categoryPayments: [categoryPaymentSchema],
 
     status: {
       type: String,
@@ -37,7 +72,6 @@ const payoutSchema = new mongoose.Schema(
       enum: ["cash", "upi", "bank", "cheque"],
     },
     transactionId: String,
-
     attachment: String,
 
     paidAt: Date,

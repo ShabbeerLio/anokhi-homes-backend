@@ -18,6 +18,7 @@ const colonySchema = new mongoose.Schema(
     image: String,
 
     area: String,
+    category: String,
 
     priceRange: String,
 
