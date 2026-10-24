@@ -11,6 +11,7 @@ const SiteVisit = require("../models/SiteVisit");
 /* =========================
    GET ALL LEADS
 ========================= */
+
 router.get("/", fetchuser, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -20,7 +21,7 @@ router.get("/", fetchuser, async (req, res) => {
     // ✅ ADMIN / STAFF
     if (user.role === "admin" || user.role === "staff") {
       leads = await Lead.find()
-        .populate("agent", "name")
+        .populate("agent", "name referralId")
         .populate("notes.by", "name");
     }
 
@@ -29,7 +30,7 @@ router.get("/", fetchuser, async (req, res) => {
       const all = await Lead.find({
         $or: [{ agent: user._id }, { rejectedBy: user._id }],
       })
-        .populate("agent", "name")
+        .populate("agent", "name referralId")
         .populate("notes.by", "name");
 
       leads = all.map((lead) => {
@@ -71,7 +72,7 @@ router.get("/", fetchuser, async (req, res) => {
       leads = await Lead.find({
         customer: user._id, // 🔥 IMPORTANT
       })
-        .populate("agent", "name")
+        .populate("agent", "name referralId")
         .populate("notes.by", "name role");
     }
 
@@ -156,6 +157,7 @@ router.get("/", fetchuser, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+
 
 /* =========================
    ADD LEAD

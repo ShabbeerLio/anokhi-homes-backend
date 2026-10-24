@@ -11,6 +11,53 @@ const Payment = require("../models/Payment");
 const PlotHold = require("../models/PlotHold");
 const { notifyUser, notifyAdmins } = require("../utils/notify");
 const updateAgentRating = require("../utils/updateAgentRating");
+const getDownlineIds = require("../utils/getDownlineIds");
+const PLC_MIN = 5;
+const PLC_MAX = 10;
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const isValidPlc = (p) => Number.isFinite(p) && p >= PLC_MIN && p <= PLC_MAX;
+
+// Rebuild 10% / 25% / 65% from booking.finalAmount, then deduct what is
+// already paid (e.g. a hold payment): booking first, then agreement, then full.
+const rebuildSchedule = (booking) => {
+  const total = booking.finalAmount;
+  const parts = {
+    booking: round2(total * 0.1),
+    agreement: round2(total * 0.25),
+  };
+  parts.full = round2(total - parts.booking - parts.agreement);
+
+  let paidLeft = booking.amountPaid || 0;
+
+  ["booking", "agreement", "full"].forEach((key) => {
+    const slot = booking.paymentSchedule[key];
+    const covered = Math.min(paidLeft, parts[key]);
+    paidLeft -= covered;
+
+    const due = round2(parts[key] - covered);
+    const wasPaid = slot.paid;
+
+    slot.amount = due;
+    slot.paid = due === 0;
+    if (slot.paid && !wasPaid) slot.date = new Date();
+  });
+};
+
+// PLC % is applied on the base amount (finalAmount minus any earlier PLC),
+// so applying it twice never double-charges.
+const applyPlc = (booking, percent) => {
+  const base = round2((booking.finalAmount || 0) - (booking.plcAmount || 0));
+  const plcAmount = round2((base * percent) / 100);
+
+  booking.plcPercent = percent;
+  booking.plcAmount = plcAmount;
+  booking.finalAmount = round2(base + plcAmount);
+
+  rebuildSchedule(booking);
+  booking.markModified("paymentSchedule");
+};
+
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -21,7 +68,8 @@ router.get("/", fetchuser, async (req, res) => {
     if (user.role === "admin" || user.role === "staff") {
       query = {};
     } else if (user.role === "agent") {
-      query = { agent: user._id };
+      const downlineIds = await getDownlineIds(user._id);
+      query = { agent: { $in: [user._id, ...downlineIds] } };
     } else if (user.role === "user") {
       query = { customer: user._id };
     }
@@ -142,14 +190,30 @@ router.post("/add", fetchuser, async (req, res) => {
     }
 
     // 🔥 CALCULATIONS
+    // 🔥 CALCULATIONS
+    const isAdminOrStaff = user.role === "admin" || user.role === "staff";
+
     const totalAmount = plotData.price * plotData.area;
 
     const finalRate = requestAmount || plotData.price;
     const baseAmount = finalRate * plotData.area;
 
-    const bookingAmount = baseAmount * 0.1;
-    const agreementAmount = baseAmount * 0.25;
-    const fullAmount = baseAmount - bookingAmount - agreementAmount;
+    // PLC: admin/staff choose it now. For agent bookings it is set when admin approves.
+    let plcPercent = 0;
+    if (plotData.plc && isAdminOrStaff) {
+      plcPercent = Number(req.body.plcPercent);
+      if (!isValidPlc(plcPercent)) {
+        return res.status(400).json({
+          message: `PLC percentage (${PLC_MIN}-${PLC_MAX}) is required for this plot`,
+        });
+      }
+    }
+    const plcAmount = round2((baseAmount * plcPercent) / 100);
+    const finalAmount = round2(baseAmount + plcAmount);
+
+    const bookingAmount = finalAmount * 0.1;
+    const agreementAmount = finalAmount * 0.25;
+    const fullAmount = finalAmount - bookingAmount - agreementAmount;
 
     const today = new Date();
     const bookingDate = new Date(today);
@@ -171,7 +235,9 @@ router.post("/add", fetchuser, async (req, res) => {
       plotArea: plotData.area,
 
       totalAmount,
-      finalAmount: baseAmount,
+      plcPercent,
+      plcAmount,
+      finalAmount, // requested price × area + PLC
       requestAmount,
       termsAccepted,
       createdBy: user._id,
@@ -365,99 +431,496 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       });
     }
 
-    const { action, note } = req.body;
+    const { action, note, plcPercent } = req.body;
 
-    let update = {};
+    if (action !== "approve" && action !== "reject") {
+      return res.status(400).json({ message: "Invalid action" });
+    }
+
+    if (action === "reject" && !note) {
+      return res.status(400).json({ message: "Note required for rejection" });
+    }
+
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    const colonyData = await Colony.findById(booking.colony);
+    const plotData = colonyData?.layout.plots.find(
+      (p) => p._id.toString() === booking.plot.toString(),
+    );
 
     if (action === "approve") {
-      update.status = "pending";
-    } else if (action === "reject") {
-      if (!note) {
-        return res.status(400).json({
-          message: "Note required for rejection",
-        });
+      booking.status = "pending";
+
+      // PLC plot: admin selects 5-10% (required unless already set at booking time)
+      if (plotData?.plc) {
+        const alreadySet = Number(booking.plcPercent) > 0;
+
+        if (
+          plcPercent !== undefined &&
+          plcPercent !== null &&
+          plcPercent !== ""
+        ) {
+          const pct = Number(plcPercent);
+          if (!isValidPlc(pct)) {
+            return res.status(400).json({
+              message: `PLC percentage must be between ${PLC_MIN} and ${PLC_MAX}`,
+              plcRequired: true,
+            });
+          }
+          applyPlc(booking, pct); // recalculates plcAmount, finalAmount, schedule
+        } else if (!alreadySet) {
+          return res.status(400).json({
+            message: `Select PLC percentage (${PLC_MIN}-${PLC_MAX}) to approve`,
+            plcRequired: true,
+          });
+        }
       }
-
-      update.status = "rejected";
     } else {
-      return res.status(400).json({
-        message: "Invalid action",
-      });
+      booking.status = "rejected";
+
+      if (plotData) {
+        plotData.plotType = "FOR_SALE";
+        await colonyData.save();
+      }
     }
 
-    if (action === "reject") {
-      const bookingData = await Booking.findById(req.params.id);
-
-      const colonyData = await Colony.findById(bookingData.colony);
-
-      const plot = colonyData.layout.plots.find(
-        (p) => p.plotId === bookingData.plotId,
-      );
-
-      if (plot) plot.plotType = "FOR_SALE";
-
-      await colonyData.save();
-    }
-
-    // 🔥 ADD NOTE
     if (note) {
-      update.$push = {
-        notes: {
-          text: note,
-          by: user._id,
-        },
-      };
+      booking.notes.push({ text: note, by: user._id });
     }
 
-    const booking = await Booking.findByIdAndUpdate(req.params.id, update, {
-      new: true,
+    await booking.save();
+
+    const approved = action === "approve";
+
+    await notifyUser({
+      user: booking.agent,
+      sender: user._id,
+      title: approved ? "Booking Approved" : "Booking Rejected",
+      message: approved
+        ? "Your booking request has been approved."
+        : "Your booking request has been rejected.",
+      type: "booking",
+      referenceId: booking._id,
+      referenceModel: "Booking",
     });
-    if (action === "approve") {
-      await notifyUser({
-        user: booking.agent,
-        sender: user._id,
-        title: "Booking Approved",
-        message: "Your booking request has been approved.",
-        type: "booking",
-        referenceId: booking._id,
-        referenceModel: "Booking",
-      });
 
-      await notifyUser({
-        user: booking.customer,
-        sender: user._id,
-        title: "Booking Approved",
-        message: "Your booking has been approved.",
-        type: "booking",
-        referenceId: booking._id,
-        referenceModel: "Booking",
-      });
-    } else if (action === "reject") {
-      await notifyUser({
-        user: booking.agent,
-        sender: user._id,
-        title: "Booking Rejected",
-        message: "Your booking request has been rejected.",
-        type: "booking",
-        referenceId: booking._id,
-        referenceModel: "Booking",
-      });
+    await notifyUser({
+      user: booking.customer,
+      sender: user._id,
+      title: approved ? "Booking Approved" : "Booking Rejected",
+      message: approved
+        ? "Your booking has been approved."
+        : "Your booking request has been rejected.",
+      type: "booking",
+      referenceId: booking._id,
+      referenceModel: "Booking",
+    });
 
-      await notifyUser({
-        user: booking.customer,
-        sender: user._id,
-        title: "Booking Rejected",
-        message: "Your booking request has been rejected.",
-        type: "booking",
-        referenceId: booking._id,
-        referenceModel: "Booking",
-      });
-    }
     res.json(booking);
   } catch (error) {
+    console.log(error);
     res.status(500).send("Server Error");
   }
 });
+
+// router.post("/add", fetchuser, async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.id);
+
+//     const {
+//       customer,
+//       location,
+//       colony,
+//       plot,
+//       requestAmount,
+//       sitevisitId,
+//       bookingDays,
+//       agreementDays,
+//       fullPaymentDays,
+//       termsAccepted,
+//     } = req.body;
+
+//     // ✅ VALIDATIONS
+//     if (!plot) {
+//       return res.status(400).json({ message: "Plot is required" });
+//     }
+
+//     if (!termsAccepted) {
+//       return res.status(400).json({
+//         message: "Terms & conditions must be accepted",
+//       });
+//     }
+
+//     if (!bookingDays || !agreementDays || !fullPaymentDays) {
+//       return res.status(400).json({
+//         message: "Please select all payment terms",
+//       });
+//     }
+
+//     // 🔥 GET COLONY
+//     const colonyData = await Colony.findById(colony);
+
+//     if (!colonyData) {
+//       return res.status(404).json({ message: "Colony not found" });
+//     }
+
+//     // 🔥 FIND PLOT
+//     const plotData = colonyData.layout.plots.find(
+//       (p) => p._id.toString() === plot.toString(),
+//     );
+
+//     if (!plotData) {
+//       return res.status(404).json({ message: "Plot not found" });
+//     }
+
+//     // 🔥 CHECK AVAILABILITY
+//     const hold = await PlotHold.findOne({
+//       colony,
+//       plotId: plot,
+//       status: "ACTIVE",
+//     });
+
+//     let isOwnHold = false;
+
+//     if (hold) {
+//       if (
+//         hold.agent.toString() === user._id.toString() &&
+//         hold.customer.toString() === customer.toString()
+//       ) {
+//         isOwnHold = true;
+//       } else {
+//         return res.status(400).json({
+//           message: "Plot is already held by another agent.",
+//         });
+//       }
+//     }
+
+//     if (!isOwnHold && plotData.plotType !== "FOR_SALE") {
+//       return res.status(400).json({
+//         message: "Plot is not available",
+//       });
+//     }
+
+//     // 🔥 CALCULATIONS
+//     const totalAmount = plotData.price * plotData.area;
+
+//     const finalRate = requestAmount || plotData.price;
+//     const baseAmount = finalRate * plotData.area;
+
+//     const bookingAmount = baseAmount * 0.1;
+//     const agreementAmount = baseAmount * 0.25;
+//     const fullAmount = baseAmount - bookingAmount - agreementAmount;
+
+//     const today = new Date();
+//     const bookingDate = new Date(today);
+//     bookingDate.setDate(bookingDate.getDate() + Number(bookingDays));
+//     const agreementDate = new Date(bookingDate);
+//     agreementDate.setDate(agreementDate.getDate() + Number(agreementDays));
+//     const fullDate = new Date(agreementDate);
+//     fullDate.setDate(fullDate.getDate() + Number(fullPaymentDays));
+
+//     // 🔥 DATA OBJECT
+//     let data = {
+//       sitevisitId,
+//       customer,
+//       location,
+//       colony,
+//       plot,
+
+//       pricePerSqft: plotData.price,
+//       plotArea: plotData.area,
+
+//       totalAmount,
+//       finalAmount: baseAmount,
+//       requestAmount,
+//       termsAccepted,
+//       createdBy: user._id,
+//       paymentSchedule: {
+//         booking: {
+//           percent: 10,
+//           amount: bookingAmount,
+//           dueDays: Number(bookingDays),
+//           paid: false,
+//           date: bookingDate,
+//         },
+
+//         agreement: {
+//           percent: 25,
+//           amount: agreementAmount,
+//           dueDays: Number(agreementDays),
+//           paid: false,
+//           date: agreementDate,
+//         },
+//         full: {
+//           percent: 65,
+//           amount: fullAmount,
+//           dueDays: Number(fullPaymentDays),
+//           paid: false,
+//           date: fullDate,
+//         },
+//       },
+//     };
+
+//     // 🔥 ROLE LOGIC
+//     // ROLE LOGIC
+//     if (user.role === "admin" || user.role === "staff") {
+//       data.agent = req.body.agent;
+//     } else {
+//       data.agent = user._id;
+//     }
+
+//     // Booking is immediately active
+//     data.status = "pending";
+//     // 🔥 CREATE BOOKING
+//     const booking = await Booking.create(data);
+//     const agent = await User.findById(booking.agent);
+
+//     if (user.role === "agent") {
+//       await notifyAdmins({
+//         sender: user._id,
+//         title: "New Booking Request",
+//         message: `${user.name} created a booking request.`,
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+
+//       await notifyUser({
+//         user: booking.customer,
+//         sender: user._id,
+//         title: "Booking Created",
+//         message: "Your booking request has been submitted.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+//     } else {
+//       await notifyUser({
+//         user: booking.agent,
+//         sender: user._id,
+//         title: "New Booking Assigned",
+//         message: "A booking has been assigned to you.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+
+//       await notifyUser({
+//         user: booking.customer,
+//         sender: user._id,
+//         title: "Booking Created",
+//         message: "Your booking has been created successfully.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+//     }
+//     if (agent) {
+//       agent.bookingPoints += 15;
+//       await agent.save();
+//       await updateAgentRating(agent._id);
+//     }
+//     // ===========================================
+//     // LINK HOLD PAYMENT (IF ANY)
+//     // ===========================================
+//     let holdPayment = null;
+
+//     if (hold) {
+//       holdPayment = await Payment.findOne({
+//         hold: hold._id,
+//         isHoldPayment: true,
+//         status: "approved",
+//       });
+//     }
+
+//     if (holdPayment) {
+//       // attach payment to booking
+//       holdPayment.booking = booking._id;
+//       await holdPayment.save();
+//       // add paid amount
+//       booking.amountPaid += holdPayment.amount;
+//       // reduce booking installment
+//       booking.paymentSchedule.booking.amount = Math.max(
+//         booking.paymentSchedule.booking.amount - holdPayment.amount,
+//         0,
+//       );
+
+//       // if booking installment completed
+
+//       if (booking.paymentSchedule.booking.amount === 0) {
+//         booking.paymentSchedule.booking.paid = true;
+//         booking.paymentSchedule.booking.date = new Date();
+//       }
+//       await booking.save();
+
+//       // ===========================================
+//       // MLM FOR HOLD PAYMENT
+//       // ===========================================
+
+//       if (!holdPayment.mlmProcessed && booking.agent) {
+//         await updateBusinessTree(booking.agent, holdPayment.amount);
+//         await distributeDirectIncome(
+//           booking.agent,
+//           holdPayment.amount,
+//           holdPayment._id,
+//         );
+//         await distributeDifferenceIncome(
+//           booking.agent,
+//           holdPayment.amount,
+//           holdPayment._id,
+//         );
+//         await distributeMatchingIncome(booking.agent);
+//         await checkRewards(booking.agent);
+//         holdPayment.mlmProcessed = true;
+//         await holdPayment.save();
+//       }
+//     }
+
+//     // ===========================================
+//     // RELEASE HOLD
+//     // ===========================================
+
+//     if (hold) {
+//       hold.status = "RELEASED";
+//       hold.releasedAt = new Date();
+//       await hold.save();
+//     }
+
+//     // ===========================================
+//     // UPDATE PLOT
+//     // ===========================================
+
+//     plotData.plotType = "PENDING";
+//     await colonyData.save();
+
+//     // ===========================================
+//     // UPDATE SITE VISIT
+//     // ===========================================
+
+//     await SiteVisit.findByIdAndUpdate(sitevisitId, {
+//       status: "completed",
+//       convertedAt: new Date(),
+//       $push: {
+//         notes: {
+//           text: "Site visit completed & booking created",
+
+//           by: user._id,
+//         },
+//       },
+//     });
+//     res.json(booking);
+//   } catch (error) {
+//     console.log(error);
+//     res.status(500).send("Server Error");
+//   }
+// });
+
+// router.put("/action/:id", fetchuser, async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.id);
+
+//     if (user.role !== "admin" && user.role !== "staff") {
+//       return res.status(403).json({
+//         message: "Only admin or staff can take action",
+//       });
+//     }
+
+//     const { action, note } = req.body;
+
+//     let update = {};
+
+//     if (action === "approve") {
+//       update.status = "pending";
+//     } else if (action === "reject") {
+//       if (!note) {
+//         return res.status(400).json({
+//           message: "Note required for rejection",
+//         });
+//       }
+
+//       update.status = "rejected";
+//     } else {
+//       return res.status(400).json({
+//         message: "Invalid action",
+//       });
+//     }
+
+//     if (action === "reject") {
+//       const bookingData = await Booking.findById(req.params.id);
+
+//       const colonyData = await Colony.findById(bookingData.colony);
+
+//       const plot = colonyData.layout.plots.find(
+//         (p) => p.plotId === bookingData.plotId,
+//       );
+
+//       if (plot) plot.plotType = "FOR_SALE";
+
+//       await colonyData.save();
+//     }
+
+//     // 🔥 ADD NOTE
+//     if (note) {
+//       update.$push = {
+//         notes: {
+//           text: note,
+//           by: user._id,
+//         },
+//       };
+//     }
+
+//     const booking = await Booking.findByIdAndUpdate(req.params.id, update, {
+//       new: true,
+//     });
+//     if (action === "approve") {
+//       await notifyUser({
+//         user: booking.agent,
+//         sender: user._id,
+//         title: "Booking Approved",
+//         message: "Your booking request has been approved.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+
+//       await notifyUser({
+//         user: booking.customer,
+//         sender: user._id,
+//         title: "Booking Approved",
+//         message: "Your booking has been approved.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+//     } else if (action === "reject") {
+//       await notifyUser({
+//         user: booking.agent,
+//         sender: user._id,
+//         title: "Booking Rejected",
+//         message: "Your booking request has been rejected.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+
+//       await notifyUser({
+//         user: booking.customer,
+//         sender: user._id,
+//         title: "Booking Rejected",
+//         message: "Your booking request has been rejected.",
+//         type: "booking",
+//         referenceId: booking._id,
+//         referenceModel: "Booking",
+//       });
+//     }
+//     res.json(booking);
+//   } catch (error) {
+//     res.status(500).send("Server Error");
+//   }
+// });
 
 /* =========================
    ADD NOTE TO LEAD

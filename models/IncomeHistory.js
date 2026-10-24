@@ -45,6 +45,7 @@ const incomeHistorySchema = new mongoose.Schema(
       enum: ["pending", "credited"],
       default: "credited",
     },
+    remark: { type: String },
   },
   {
     timestamps: true,

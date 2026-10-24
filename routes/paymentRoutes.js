@@ -39,7 +39,7 @@ router.get("/", fetchuser, async (req, res) => {
     }
 
     const payments = await Payment.find(query)
-      .populate("customer", "name phone")
+      .populate("customer", "name phone referralId")
       .populate("agent", "name phone")
       .populate({
         path: "booking",
@@ -53,7 +53,7 @@ router.get("/", fetchuser, async (req, res) => {
       .populate({
         path: "hold",
         populate: [
-          { path: "colony", select: "name layout.plots" },
+          { path: "colony", select: "name category layout.plots" },
           { path: "agent", select: "name phone" },
           { path: "customer", select: "name phone" },
         ],
@@ -184,21 +184,38 @@ router.post("/add", fetchuser, async (req, res) => {
 
       await bookingDoc.save();
       if (!payment.mlmProcessed && bookingData.agent) {
+        // await updateBusinessTree(bookingData.agent, payment.amount);
+
+        // await distributeDirectIncome(
+        //   bookingData.agent,
+        //   payment.amount,
+        //   payment._id,
+        // );
+
+        // await distributeDifferenceIncome(
+        //   bookingData.agent,
+        //   payment.amount,
+        //   payment._id,
+        // );
         await updateBusinessTree(bookingData.agent, payment.amount);
 
-        await distributeDirectIncome(
-          bookingData.agent,
-          payment.amount,
-          payment._id,
-        );
+        const directSegments =
+          (await distributeDirectIncome(
+            bookingData.agent,
+            payment.amount,
+            payment._id,
+          )) || [];
 
         await distributeDifferenceIncome(
           bookingData.agent,
           payment.amount,
           payment._id,
+          directSegments,
         );
 
         await distributeMatchingIncome(bookingData.agent);
+
+        // await distributeMatchingIncome(bookingData.agent);
         // await distributeRoyaltyIncome(bookingData._id, bookingData.agent);
 
         payment.mlmProcessed = true;
@@ -403,21 +420,39 @@ router.put("/action/:id", fetchuser, async (req, res) => {
       await booking.save();
 
       if (!payment.mlmProcessed && booking.agent) {
+        // await updateBusinessTree(booking.agent, payment.amount);
+
+        // await distributeDirectIncome(
+        //   booking.agent,
+        //   payment.amount,
+        //   payment._id,
+        // );
+
+        // await distributeDifferenceIncome(
+        //   booking.agent,
+        //   payment.amount,
+        //   payment._id,
+        // );
+
         await updateBusinessTree(booking.agent, payment.amount);
 
-        await distributeDirectIncome(
-          booking.agent,
-          payment.amount,
-          payment._id,
-        );
+        const directSegments =
+          (await distributeDirectIncome(
+            booking.agent,
+            payment.amount,
+            payment._id,
+          )) || [];
 
         await distributeDifferenceIncome(
           booking.agent,
           payment.amount,
           payment._id,
+          directSegments,
         );
 
         await distributeMatchingIncome(booking.agent);
+
+        // await distributeMatchingIncome(booking.agent);
         // await distributeRoyaltyIncome(booking._id, booking.agent);
         // await checkRewards(booking.agent);
 

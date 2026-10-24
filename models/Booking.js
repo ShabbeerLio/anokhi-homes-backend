@@ -43,7 +43,8 @@ const bookingSchema = new mongoose.Schema(
 
     pricePerSqft: Number,
     plotArea: Number,
-
+    plcPercent: Number,
+    plcAmount: Number,
     totalAmount: Number,
     finalAmount: Number,
 

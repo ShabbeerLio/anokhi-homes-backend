@@ -1,8 +1,8 @@
+const mongoose = require("mongoose");
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const RankSlab = require("../models/RankSlab");
-
 const { login, register } = require("../controllers/authController");
 const fetchuser = require("../middleware/fetchUser");
 const User = require("../models/User");
@@ -15,6 +15,7 @@ const { verifyOtp } = require("../controllers/verifyOtp");
 const Lead = require("../models/Lead");
 const SiteVisit = require("../models/SiteVisit");
 const Booking = require("../models/Booking");
+const Colony = require("../models/Colony");
 
 /* AUTH */
 router.post("/login", login);
@@ -766,8 +767,6 @@ router.get("/income-history", fetchuser, async (req, res) => {
     const loggedUser = await User.findById(req.user.id);
 
     let query = {};
-
-    // ADMIN CAN SEE ALL
     if (loggedUser.role !== "admin") {
       query.user = req.user.id;
     }
@@ -782,39 +781,91 @@ router.get("/income-history", fetchuser, async (req, res) => {
       })
       .populate({
         path: "payment",
-        select: "customer approvedBy paymentDate amount paymentType booking",
+        select:
+          "customer approvedBy paymentDate amount paymentType paymentMode booking hold",
         populate: [
-          {
-            path: "customer",
-            select: "name phone email",
-          },
-          {
-            path: "approvedBy",
-            select: "name phone email",
-          },
-          { path: "paymentMode", select: "name" },
-          { path: "paymentType", select: "name" },
-          { path: "paymentDate", select: "name" },
+          { path: "customer", select: "name phone email" },
+          { path: "approvedBy", select: "name phone email" },
           {
             path: "booking",
-            select: "colony",
+            select: "colony plot plotArea pricePerSqft",
             populate: [
-              {
-                path: "colony",
-                select: "category",
-              },
+              { path: "colony", select: "name category" },
+            ],
+          },
+          {
+            path: "hold",
+            select: "colony plotId",
+            populate: [
+              { path: "colony", select: "name category" },
             ],
           },
         ],
       })
-      .sort({
-        createdAt: -1,
-      });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json(histories);
+        // 1) collect every plot id referenced by bookings and holds
+    const colonyIds = new Set();
+    const plotIds = new Set();
+
+    histories.forEach((h) => {
+      const b = h.payment?.booking;
+      const hd = h.payment?.hold;
+      if (b?.colony?._id) colonyIds.add(b.colony._id.toString());
+      if (b?.plot) plotIds.add(b.plot.toString());
+      if (hd?.colony?._id) colonyIds.add(hd.colony._id.toString());
+      if (hd?.plotId) plotIds.add(hd.plotId.toString());
+    });
+
+    // 2) one query: only the needed plots, only plotNumber + plotType (no points)
+    const toOid = (id) => new mongoose.Types.ObjectId(id);
+
+    const plotRows = plotIds.size
+      ? await Colony.aggregate([
+          { $match: { _id: { $in: [...colonyIds].map(toOid) } } },
+          { $unwind: "$layout.plots" },
+          {
+            $match: {
+              "layout.plots._id": { $in: [...plotIds].map(toOid) },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              id: "$layout.plots._id",
+              plotNumber: "$layout.plots.plotNumber",
+              plotType: "$layout.plots.plotType",
+            },
+          },
+        ])
+      : [];
+
+    const plotMap = new Map(
+      plotRows.map((p) => [
+        p.id.toString(),
+        { plotNumber: p.plotNumber, plotType: p.plotType },
+      ]),
+    );
+        // 3) attach the plot to each booking / hold (once per shared object)
+    const done = new WeakSet();
+
+    const attachPlot = (obj, idKey, outKey) => {
+      if (!obj || done.has(obj)) return; // shared object already handled
+      done.add(obj);
+      const id = obj[idKey];
+      obj[outKey] = id ? plotMap.get(id.toString()) || null : null;
+    };
+
+    const result = histories.map((h) => {
+      attachPlot(h.payment?.booking, "plot", "plot");
+      attachPlot(h.payment?.hold, "plotId", "plot");
+      return h;
+    });
+
+    res.json(result);
   } catch (error) {
     console.log(error);
-
     res.status(500).send("Internal server error");
   }
 });

@@ -5,6 +5,7 @@ const getPayoutCycle = require("../utils/getPayoutCycle");
 const getSixMonthCycle = require("../utils/getSixMonthCycle");
 const PayoutSetting = require("../models/PayoutSetting");
 const distributeBestPerformanceIncome = require("./distributeBestPerformanceIncome");
+const { getNextInvoiceNo } = require("../utils/invoiceNumber");
 
 const REGULAR_TYPE_FIELD_MAP = {
   direct_income: "directIncome",
@@ -120,6 +121,7 @@ const generatePayouts = async (referenceDate = new Date()) => {
       user: agent._id,
       cycleStart,
       cycleEnd,
+      invoiceNo: await getNextInvoiceNo(cycleEnd),
       ...breakdown,
       grossAmount,
       tdsPercent: appliedTdsPercent,

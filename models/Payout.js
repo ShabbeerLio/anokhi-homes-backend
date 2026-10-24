@@ -71,6 +71,7 @@ const payoutSchema = new mongoose.Schema(
       type: String,
       enum: ["cash", "upi", "bank", "cheque"],
     },
+    invoiceNo: { type: String, unique: true, sparse: true },
     transactionId: String,
     attachment: String,
 

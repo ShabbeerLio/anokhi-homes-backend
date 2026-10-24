@@ -75,6 +75,10 @@ const colonySchema = new mongoose.Schema(
           },
 
           price: Number,
+          plc: {
+            type: Boolean,
+            default: false,
+          },
         },
       ],
     },
