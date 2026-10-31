@@ -43,7 +43,7 @@ const siteVisitSchema = new mongoose.Schema(
     ],
 
     visitDate: String, // or Date if you prefer
-
+    visiters: Number,
     status: {
       type: String,
       enum: [

@@ -57,7 +57,29 @@ const applyPlc = (booking, percent) => {
   rebuildSchedule(booking);
   booking.markModified("paymentSchedule");
 };
+// Puts the plot back on sale, unless another live booking still holds it.
+// Only plots that a booking put into PENDING/SOLD are touched, so a plot that
+// someone else has since put on HOLD (or admin marked NOT_FOR_SALE) is left alone.
+const releasePlot = async (booking) => {
+  const stillBooked = await Booking.exists({
+    _id: { $ne: booking._id },
+    colony: booking.colony,
+    plot: booking.plot,
+    status: { $in: ["approval", "pending", "confirmed"] },
+  });
+  if (stillBooked) return false;
 
+  await Colony.updateOne(
+    { _id: booking.colony },
+    { $set: { "layout.plots.$[p].plotType": "FOR_SALE" } },
+    {
+      arrayFilters: [
+        { "p._id": booking.plot, "p.plotType": { $in: ["PENDING", "SOLD"] } },
+      ],
+    },
+  );
+  return true;
+};
 
 router.get("/", fetchuser, async (req, res) => {
   try {
@@ -479,12 +501,18 @@ router.put("/action/:id", fetchuser, async (req, res) => {
         }
       }
     } else {
-      booking.status = "rejected";
-
-      if (plotData) {
-        plotData.plotType = "FOR_SALE";
-        await colonyData.save();
+      if (booking.status === "confirmed") {
+        return res
+          .status(400)
+          .json({ message: "A confirmed booking cannot be rejected" });
       }
+      if ((booking.amountPaid || 0) > 0) {
+        return res.status(400).json({
+          message:
+            "Payments are already received on this booking. Handle the refund / cancellation first.",
+        });
+      }
+      booking.status = "rejected";
     }
 
     if (note) {
@@ -492,6 +520,10 @@ router.put("/action/:id", fetchuser, async (req, res) => {
     }
 
     await booking.save();
+
+    if (action === "reject") {
+      await releasePlot(booking);
+    }
 
     const approved = action === "approve";
 
@@ -1068,10 +1100,22 @@ router.delete(
 
 router.delete("/delete/:id", fetchuser, async (req, res) => {
   try {
-    await Booking.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.user.id).select("role");
+    if (!user || !["admin", "staff"].includes(user.role)) {
+      return res.status(403).json({ message: "Only admin or staff can delete bookings" });
+    }
+
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    await Booking.findByIdAndDelete(booking._id);
+    await releasePlot(booking);
 
     res.json({ message: "Booking deleted" });
   } catch (error) {
+    console.log(error);
     res.status(500).send("Server Error");
   }
 });
