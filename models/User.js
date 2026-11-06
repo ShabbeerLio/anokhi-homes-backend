@@ -10,7 +10,8 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
+      trim: true,
+      lowercase: true,
     },
 
     phone: String,
@@ -43,7 +44,23 @@ const userSchema = new mongoose.Schema(
 
     aadharNumber: String,
     aadharPhoto: String,
+    panVerified: {
+      type: Boolean,
+      default: false,
+    },
 
+    panVerifiedAt: {
+      type: Date,
+    },
+
+    // aadhaarVerified: {
+    //   type: Boolean,
+    //   default: false,
+    // },
+
+    // aadhaarVerifiedAt: {
+    //   type: Date,
+    // },
     bankName: String,
     accountNumber: String,
     ifsc: String,
@@ -296,6 +313,8 @@ const userSchema = new mongoose.Schema(
 
 ================================= */
 
+userSchema.index({ email: 1, role: 1 }, { unique: true });
+
 userSchema.pre("save", async function () {
   // Only admin and agent get referralId
 
@@ -306,6 +325,52 @@ userSchema.pre("save", async function () {
       const random = Math.floor(100000 + Math.random() * 900000);
 
       const referralCode = `AH${random}`;
+
+      const existingUser = await mongoose
+
+        .model("User")
+
+        .findOne({
+          referralId: referralCode,
+        });
+
+      if (!existingUser) {
+        this.referralId = referralCode;
+
+        isUnique = true;
+      }
+    }
+  }
+  if (this.role === "user") {
+    let isUnique = false;
+
+    while (!isUnique) {
+      const random = Math.floor(100000 + Math.random() * 900000);
+
+      const referralCode = `CAH${random}`;
+
+      const existingUser = await mongoose
+
+        .model("User")
+
+        .findOne({
+          referralId: referralCode,
+        });
+
+      if (!existingUser) {
+        this.referralId = referralCode;
+
+        isUnique = true;
+      }
+    }
+  }
+  if (this.role === "staff") {
+    let isUnique = false;
+
+    while (!isUnique) {
+      const random = Math.floor(100000 + Math.random() * 900000);
+
+      const referralCode = `SAH${random}`;
 
       const existingUser = await mongoose
 

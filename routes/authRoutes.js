@@ -16,8 +16,28 @@ const Lead = require("../models/Lead");
 const SiteVisit = require("../models/SiteVisit");
 const Booking = require("../models/Booking");
 const Colony = require("../models/Colony");
+const Payment = require("../models/Payment");
 
 /* AUTH */
+const syncFromSource = require("../utils/syncFromSource");
+
+router.post("/sync-data", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id).select("role");
+    if (!loggedUser || loggedUser.role !== "admin") {
+      return res.status(403).json({ msg: "Only admin can sync data" });
+    }
+
+    const { collections, mirrorDeletes, dryRun } = req.body;
+    const report = await syncFromSource({ collections, mirrorDeletes, dryRun });
+
+    res.json({ success: true, report });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ msg: "Sync failed", error: error.message });
+  }
+});
+
 router.post("/login", login);
 router.post("/register", register);
 
@@ -789,23 +809,19 @@ router.get("/income-history", fetchuser, async (req, res) => {
           {
             path: "booking",
             select: "colony plot plotArea pricePerSqft",
-            populate: [
-              { path: "colony", select: "name category" },
-            ],
+            populate: [{ path: "colony", select: "name category" }],
           },
           {
             path: "hold",
             select: "colony plotId",
-            populate: [
-              { path: "colony", select: "name category" },
-            ],
+            populate: [{ path: "colony", select: "name category" }],
           },
         ],
       })
       .sort({ createdAt: -1 })
       .lean();
 
-        // 1) collect every plot id referenced by bookings and holds
+    // 1) collect every plot id referenced by bookings and holds
     const colonyIds = new Set();
     const plotIds = new Set();
 
@@ -847,7 +863,7 @@ router.get("/income-history", fetchuser, async (req, res) => {
         { plotNumber: p.plotNumber, plotType: p.plotType },
       ]),
     );
-        // 3) attach the plot to each booking / hold (once per shared object)
+    // 3) attach the plot to each booking / hold (once per shared object)
     const done = new WeakSet();
 
     const attachPlot = (obj, idKey, outKey) => {
@@ -1086,6 +1102,276 @@ router.put("/update-rank-slab/:level", fetchuser, async (req, res) => {
     res.status(500).json({
       msg: "Internal Server Error",
     });
+  }
+});
+
+router.get("/user-report/:id", fetchuser, async (req, res) => {
+  try {
+    const loggedUser = await User.findById(req.user.id);
+    const targetId = req.params.id;
+
+    // admin/staff can view anyone; everyone else only themselves
+    const allowed =
+      ["admin", "staff"].includes(loggedUser.role) ||
+      loggedUser._id.toString() === targetId;
+
+    if (!allowed) {
+      return res.status(403).json({ msg: "Not allowed" });
+    }
+
+    const { type } = req.query;
+    let data = [];
+
+    const attachPlots = async (items, getColony, getPlotId, assign) => {
+      const plotIds = new Set();
+      const colonyIds = new Set();
+      items.forEach((it) => {
+        const c = getColony(it);
+        const p = getPlotId(it);
+        if (c?._id) colonyIds.add(c._id.toString());
+        if (p) plotIds.add(p.toString());
+      });
+      if (!plotIds.size) return items;
+
+      const toOid = (id) => new mongoose.Types.ObjectId(id);
+      const rows = await Colony.aggregate([
+        { $match: { _id: { $in: [...colonyIds].map(toOid) } } },
+        { $unwind: "$layout.plots" },
+        { $match: { "layout.plots._id": { $in: [...plotIds].map(toOid) } } },
+        {
+          $project: {
+            _id: 0,
+            id: "$layout.plots._id",
+            plotNumber: "$layout.plots.plotNumber",
+            plotType: "$layout.plots.plotType",
+            area: "$layout.plots.area",
+            price: "$layout.plots.price",
+          },
+        },
+      ]);
+      const map = new Map(rows.map((r) => [r.id.toString(), r]));
+      items.forEach((it) =>
+        assign(it, map.get(getPlotId(it)?.toString()) || null),
+      );
+      return items;
+    };
+
+    // ...inside the route, replacing the type branches:
+
+    if (type === "leads") {
+      // same scope as the agent view in the lead route: own leads + ones they rejected
+      let leads = await Lead.find({
+        $or: [{ agent: targetId }, { rejectedBy: targetId }],
+      })
+        .populate("agent", "name phone")
+        .populate("notes.by", "name role")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      // same status mapping as GET /api/lead
+      leads = leads.map((lead) => {
+        let status = lead.status;
+
+        if (lead.status === "lost" || lead.status === "converted") {
+          status = lead.status;
+        } else if (lead.agent && !lead.isAccepted && lead.assignedBy) {
+          status = "new";
+        } else if (lead.agent && lead.isAccepted) {
+          status = "assigned";
+        } else if (lead.rejectedBy?.toString() === targetId) {
+          status = "rejected";
+        } else if (!lead.agent && lead.status === "unassigned") {
+          status = "missed";
+        }
+
+        return { ...lead, status };
+      });
+
+      // latest site visit per lead, latest booking per site visit
+      const leadIds = leads.map((l) => l._id);
+
+      const siteVisits = await SiteVisit.find({ lead: { $in: leadIds } })
+        .select("lead status createdAt")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const siteVisitByLead = {};
+      for (const sv of siteVisits) {
+        const key = sv.lead.toString();
+        if (!siteVisitByLead[key]) siteVisitByLead[key] = sv;
+      }
+
+      const siteVisitIds = Object.values(siteVisitByLead).map((sv) => sv._id);
+
+      const bookings = await Booking.find({
+        sitevisitId: { $in: siteVisitIds },
+      })
+        .select("sitevisitId status createdAt")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const bookingBySiteVisit = {};
+      for (const b of bookings) {
+        const key = b.sitevisitId.toString();
+        if (!bookingBySiteVisit[key]) bookingBySiteVisit[key] = b;
+      }
+
+      data = leads.map((lead) => {
+        const siteVisit = siteVisitByLead[lead._id.toString()] || null;
+        const booking = siteVisit
+          ? bookingBySiteVisit[siteVisit._id.toString()] || null
+          : null;
+
+        let currentStep;
+        if (booking) currentStep = { step: "booking", status: booking.status };
+        else if (siteVisit)
+          currentStep = { step: "siteVisit", status: siteVisit.status };
+        else currentStep = { step: "lead", status: lead.status };
+
+        return { ...lead, currentStep };
+      });
+    } else if (type === "sitevisits") {
+      data = await SiteVisit.find({ agent: targetId })
+        .populate("customer", "name phone email")
+        .populate("agent", "name phone")
+        .populate("location", "name")
+        .populate("colonies", "name")
+        .populate("notes.by", "name role")
+        .sort({ createdAt: -1 })
+        .lean();
+    } else if (type === "bookings") {
+      data = await Booking.find({ agent: targetId })
+        .populate("customer", "name phone")
+        .populate("agent", "name phone")
+        .populate("location", "name")
+        .populate("colony", "name category layout.plots")
+        .populate("notes.by", "name role")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      data.forEach((b) => {
+        const plot = b.colony?.layout?.plots?.find(
+          (p) => p._id.toString() === b.plot?.toString(),
+        );
+        if (plot) b.plot = plot;
+      });
+    } else if (type === "payments") {
+      data = await Payment.find({ agent: targetId })
+        .populate("customer", "name phone")
+        .populate("agent", "name phone")
+        .populate({
+          path: "booking",
+          populate: [
+            { path: "location", select: "name" },
+            { path: "colony", select: "name category layout.plots" },
+          ],
+        })
+        .populate({
+          path: "hold",
+          populate: [{ path: "colony", select: "name layout.plots" }],
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      data.forEach((p) => {
+        if (p.booking?.colony) {
+          p.booking.plot = p.booking.colony.layout.plots.find(
+            (x) => x._id.toString() === p.booking.plot?.toString(),
+          );
+        }
+        if (p.hold?.colony) {
+          p.hold.plot = p.hold.colony.layout.plots.find(
+            (x) => x._id.toString() === p.hold.plotId?.toString(),
+          );
+        }
+      });
+    } else if (type === "income") {
+      data = await IncomeHistory.find({ user: targetId })
+        .populate("user", "name email phone referralId designation")
+        .populate("fromUser", "name email phone referralId designation")
+        .populate({
+          path: "payment",
+          select:
+            "customer approvedBy paymentDate amount paymentType paymentMode booking hold",
+          populate: [
+            { path: "customer", select: "name phone email" },
+            { path: "approvedBy", select: "name phone email" },
+            {
+              path: "booking",
+              select: "colony plot plotArea pricePerSqft",
+              populate: [{ path: "colony", select: "name category" }],
+            },
+            {
+              path: "hold",
+              select: "colony plotId",
+              populate: [{ path: "colony", select: "name category" }],
+            },
+          ],
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      await attachPlots(
+        data.map((h) => h.payment?.booking).filter(Boolean),
+        (b) => b.colony,
+        (b) => b.plot,
+        (b, plot) => (b.plot = plot),
+      );
+      await attachPlots(
+        data.map((h) => h.payment?.hold).filter(Boolean),
+        (h) => h.colony,
+        (h) => h.plotId,
+        (h, plot) => (h.plot = plot),
+      );
+    } else if (type === "summary") {
+      const target = await User.findById(targetId).select(
+        "selfBusiness leftBusiness rightBusiness totalBusiness",
+      );
+
+      if (!target) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+
+      const rows = await IncomeHistory.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(targetId) } },
+        {
+          $group: {
+            _id: "$type",
+            total: { $sum: "$amount" },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      let totalIncome = 0;
+      let referralIncome = 0;
+      let transactions = 0;
+
+      rows.forEach((r) => {
+        totalIncome += r.total;
+        transactions += r.count;
+        if (r._id === "referal_income") referralIncome = r.total;
+      });
+
+      // admin/self views share this, so the same user always gets the same numbers
+      return res.json({
+        totalIncome,
+        referralIncome,
+        otherIncome: totalIncome - referralIncome,
+        transactions,
+        selfBusiness: target.selfBusiness || 0,
+        leftBusiness: target.leftBusiness || 0,
+        rightBusiness: target.rightBusiness || 0,
+        totalBusiness: target.totalBusiness || 0,
+      });
+    } else {
+      return res.status(400).json({ msg: "Invalid type" });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Internal Server Error");
   }
 });
 
